@@ -1,91 +1,214 @@
 import React, { useState, useContext } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import AuthContext from './AuthContext';
 import axios from 'axios';
-import './Login.css';  // Estilos personalizados
+import logo from './logo.png';
+import './Login.css';
 
-const URL = process.env.REACT_APP_URL_BACKEND || 'http://localhost:3001'
+const URL = process.env.REACT_APP_URL_BACKEND || 'http://localhost:3001';
 
 const Login = () => {
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const { login } = useContext(AuthContext);
-    const navigate = useNavigate();
+  const [usuario, setUsuario] = useState('');
+  const [password, setPassword] = useState('');
+  const [cargando, setCargando] = useState(false);
 
-    
+  const { login } = useContext(AuthContext);
+  const navigate = useNavigate();
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-    
-        try {
-            const response = await axios.post(`${URL}/login`, {
-                username: email,
-                password
-            });
+  const handleSubmit = async (e) => {
+    e.preventDefault();
 
-            if (response.data.token) {
-                const token = response.data.token;
-                const rol = response.data.rol; // Obtenemos el rol del usuario
-                login(token); // Guarda el token en el contexto o localStorage
+    if (!usuario.trim() || !password.trim()) {
+      alert('Debes ingresar usuario y contraseña');
+      return;
+    }
 
-                // Redirigir según el rol
-                if (rol === 'empleado') {
-                    navigate('/homeFarmacia'); // Redirige a HomeFarmacia.js si el rol es farmaceutico
-                } else if (rol === 'admin') {
-                    navigate('/home'); // Redirige a Home.js si el rol es doctor
-                } else {
-                    alert('Rol desconocido, contacta con el administrador');
-                }
-            }
-        } catch (error) {
-            if (error.response) {
-                if (error.response.status === 400) {
-                    alert('Usuario o contraseña incorrectos');
-                } else if (error.response.status === 403) {
-                    alert('Cuenta desactivada. Contacta con el administrador');
-                } else {
-                    alert('Error del servidor');
-                }
-            } else {
-                console.error('Error al iniciar sesión', error);
-            }
+    try {
+      setCargando(true);
+
+      const response = await axios.post(`${URL}/login`, {
+        usuario: usuario.trim(),
+        password
+      });
+
+      if (response.data.token) {
+        const token = response.data.token;
+        const usuarioData = response.data.usuario;
+
+        const user = {
+          id: usuarioData.id_usuario,
+          id_usuario: usuarioData.id_usuario,
+          id_restaurante: usuarioData.id_restaurante,
+          nombre: usuarioData.nombre,
+          usuario: usuarioData.usuario,
+          rol: usuarioData.rol,
+          nombre_restaurante: usuarioData.nombre_restaurante
+        };
+
+        login(token, user);
+
+        if (
+          user.rol === 'ADMINISTRADOR' ||
+          user.rol === 'GERENTE' ||
+          user.rol === 'CAJA' ||
+          user.rol === 'MESERO'
+        ) {
+          navigate('/Home');
+        } else if (user.rol === 'COCINA') {
+          navigate('/cocina');
+        } else {
+          alert('Rol desconocido, contacta con el administrador');
         }
-    };
+      }
 
-    return (
-        <div className="login-container">
-            <div className="login-card">
-                <h2 className="text-center mb-4">Login</h2>
-                <form onSubmit={handleSubmit}>
-                    <div className="mb-3">
-                        <label htmlFor="email" className="form-label">Usuario</label>
-                        <input
-                            type="text"
-                            className="form-control"
-                            id="email"
-                            placeholder="Usuario"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            required
-                        />
-                    </div>
-                    <div className="mb-3">
-                        <label htmlFor="password" className="form-label">Contraseña</label>
-                        <input
-                            type="password"
-                            className="form-control"
-                            id="password"
-                            placeholder="********"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            required
-                        />
-                    </div>
-                    <button type="submit" className="btn btn-primary w-100 rounded-pill">Logar</button>
-                </form>
+    } catch (error) {
+      console.error('Error al iniciar sesión:', error);
+
+      if (error.response) {
+        if (error.response.status === 401) {
+          alert('Usuario o contraseña incorrectos');
+        } else if (error.response.status === 403) {
+          alert(error.response.data?.mensaje || 'Cuenta o restaurante desactivado');
+        } else if (error.response.status === 429) {
+          alert('Demasiados intentos de login. Intenta más tarde.');
+        } else {
+          alert(error.response.data?.mensaje || 'Error del servidor');
+        }
+      } else {
+        alert('No se pudo conectar con el servidor');
+      }
+
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  return (
+    <div className="login-page">
+      <div className="login-bg-light light-one"></div>
+      <div className="login-bg-light light-two"></div>
+      <div className="login-bg-light light-three"></div>
+
+      <div className="login-wrapper">
+
+        <div className="login-info">
+          <div className="brand-box">
+            <img src={logo} alt="JFCuaR Logo" className="brand-logo" />
+
+            <div>
+              <h2>JFCuaR</h2>
+              <span>Software</span>
             </div>
+          </div>
+
+          <span className="login-badge">
+            Sistema de gestión para restaurantes
+          </span>
+
+          <h1>
+            Controla mesas, pedidos, cocina y caja desde un solo lugar
+          </h1>
+
+          <p>
+            Administra tu restaurante de forma moderna y segura. Lleva el control
+            de mesas, productos, pedidos en cocina, cobros, pagos y reportes diarios.
+          </p>
+
+          <div className="login-features">
+            <div>
+              <strong>🍽️</strong>
+              <span>Mesas</span>
+            </div>
+
+            <div>
+              <strong>🧾</strong>
+              <span>Pedidos</span>
+            </div>
+
+            <div>
+              <strong>👨‍🍳</strong>
+              <span>Cocina</span>
+            </div>
+
+            <div>
+              <strong>💵</strong>
+              <span>Caja</span>
+            </div>
+          </div>
         </div>
-    );
+
+        <div className="login-card">
+          <div className="image-container">
+            <img src={logo} alt="logo" className="login-logo" />
+          </div>
+
+          <div className="login-card-header">
+            <h2>Bienvenido</h2>
+            <p>Ingresa tus datos para acceder al restaurante</p>
+          </div>
+
+          <form onSubmit={handleSubmit}>
+            <div className="form-group">
+              <label htmlFor="usuario">
+                Usuario
+              </label>
+
+              <input
+                type="text"
+                id="usuario"
+                placeholder="Ingresa tu usuario"
+                value={usuario}
+                onChange={(e) => setUsuario(e.target.value)}
+                autoComplete="username"
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="password">
+                Contraseña
+              </label>
+
+              <input
+                type="password"
+                id="password"
+                placeholder="Ingresa tu contraseña"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="btn-login-submit"
+              disabled={cargando}
+            >
+              {cargando ? 'Ingresando...' : 'Ingresar al sistema'}
+            </button>
+
+            <button
+              type="button"
+              className="btn-link-recuperar"
+              onClick={() => navigate('/recuperar-acceso')}
+              disabled={cargando}
+            >
+              ¿Olvidaste tu usuario o contraseña?
+            </button>
+
+            <div className="register-link">
+              <span>¿No tienes restaurante registrado?</span>
+              <Link to="/registro-restaurante">
+                Crear mi restaurante
+              </Link>
+            </div>
+          </form>
+        </div>
+
+      </div>
+    </div>
+  );
 };
 
 export default Login;

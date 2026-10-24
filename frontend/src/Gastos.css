@@ -1,0 +1,293 @@
+.gastos-container {
+  width: 100%;
+  max-width: none;
+  padding: 22px 32px 35px;
+  background: #f3f4f6;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+.gastos-header {
+  width: 100%;
+  background: linear-gradient(135deg, #ffffff, #fff7ed);
+  border-radius: 22px;
+  padding: 26px 28px;
+  box-shadow: 0 12px 28px rgba(17, 24, 39, 0.08);
+  border: 1px solid #fed7aa;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 22px;
+  box-sizing: border-box;
+}
+
+.gastos-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, #dc2626, #f97316);
+  color: #ffffff;
+  padding: 8px 15px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  margin-bottom: 12px;
+}
+
+.gastos-header h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 30px;
+  font-weight: 850;
+}
+
+.gastos-header p {
+  margin: 9px 0 0;
+  color: #6b7280;
+  font-size: 15px;
+}
+
+.btn-gastos-refresh,
+.btn-gastos-save {
+  background: linear-gradient(135deg, #dc2626, #f97316) !important;
+  border: none !important;
+  color: #ffffff !important;
+  border-radius: 12px !important;
+  font-weight: 800 !important;
+  padding: 10px 16px !important;
+}
+
+.gastos-resumen {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px;
+}
+
+.gasto-resumen-card {
+  background: #ffffff;
+  border-radius: 22px;
+  padding: 22px;
+  box-shadow: 0 12px 28px rgba(17, 24, 39, 0.08);
+  border: 1px solid #e5e7eb;
+}
+
+.gasto-resumen-card span {
+  color: #6b7280;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.gasto-resumen-card h3 {
+  margin: 8px 0;
+  color: #ea580c;
+  font-size: 30px;
+  font-weight: 900;
+}
+
+.gasto-resumen-card p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.gastos-form-card,
+.gastos-filtros {
+  width: 100%;
+  background: #ffffff;
+  border-radius: 22px;
+  padding: 22px;
+  box-shadow: 0 12px 28px rgba(17, 24, 39, 0.08);
+  border: 1px solid #e5e7eb;
+  box-sizing: border-box;
+}
+
+.gastos-form-card h4 {
+  margin: 0 0 18px;
+  color: #111827;
+  font-weight: 850;
+}
+
+.gastos-form-card label,
+.gastos-filtros label {
+  color: #374151;
+  font-size: 14px;
+  font-weight: 800;
+  margin-bottom: 7px;
+}
+
+.gastos-form-card .form-control,
+.gastos-filtros .form-control {
+  border-radius: 12px;
+  border: 1px solid #d1d5db;
+  padding: 10px 12px;
+}
+
+.gastos-form-card .form-control:focus,
+.gastos-filtros .form-control:focus {
+  border-color: #f97316;
+  box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.16);
+}
+
+.gastos-filtros {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px;
+}
+
+.gastos-lista {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 18px;
+}
+
+.gasto-card {
+  background: #ffffff;
+  border-radius: 22px;
+  padding: 22px;
+  box-shadow: 0 12px 28px rgba(17, 24, 39, 0.08);
+  border: 1px solid #e5e7eb;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.gasto-card::before {
+  content: '';
+  position: absolute;
+  width: 105px;
+  height: 105px;
+  border-radius: 999px;
+  top: -35px;
+  right: -30px;
+  opacity: 0.16;
+  background: #dc2626;
+}
+
+.gasto-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 18px 36px rgba(17, 24, 39, 0.12);
+}
+
+.gasto-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  position: relative;
+  z-index: 2;
+}
+
+.gasto-categoria {
+  display: inline-block;
+  color: #ea580c;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.gasto-card h3 {
+  margin: 0;
+  color: #111827;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.gasto-card-top strong {
+  color: #dc2626;
+  font-size: 22px;
+  white-space: nowrap;
+}
+
+.gasto-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.gasto-info span {
+  background: #f9fafb;
+  border-radius: 999px;
+  color: #374151;
+  padding: 7px 11px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.gasto-referencia {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #9a3412;
+  border-radius: 14px;
+  padding: 11px 13px;
+  font-size: 13px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.gasto-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 15px;
+  margin-top: 15px;
+  border-top: 1px solid #f3f4f6;
+}
+
+.gasto-actions .btn {
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.gastos-empty {
+  grid-column: 1 / -1;
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 28px;
+  text-align: center;
+  color: #6b7280;
+  font-weight: 800;
+  border: 1px solid #e5e7eb;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.45);
+  z-index: 998;
+}
+
+@media (max-width: 1100px) {
+  .gastos-filtros {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .gastos-lista {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .gastos-container {
+    padding: 18px;
+  }
+
+  .gastos-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .btn-gastos-refresh {
+    width: 100%;
+  }
+
+  .gastos-filtros {
+    grid-template-columns: 1fr;
+  }
+
+  .gasto-card-top {
+    flex-direction: column;
+  }
+}

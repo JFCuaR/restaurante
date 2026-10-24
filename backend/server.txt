@@ -1,0 +1,2244 @@
+const express = require('express');
+const mysql = require('mysql2/promise'); // Usa solo mysql2/promise para promesas
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const fs = require('fs');
+require('dotenv').config();
+const cors = require('cors');
+
+const app = express();
+const router = express.Router(); // Crear el enrutador
+app.use(cors());
+app.use(express.json());
+
+// Configuración de la conexión a la base de datos usando Promesas
+const db = require('./db');
+
+
+
+app.get('/test-db', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT COUNT(*) AS total FROM lotes');
+    res.json({ total_lotes: rows[0].total });
+  } catch (error) {
+    console.error('Error en test-db:', error);
+    res.status(500).json({ error: 'Error al conectar con la base de datos' });
+  }
+});
+
+
+
+//ruta profile para recuperar quien esta logueado:
+const verificarToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) return res.sendStatus(401);
+
+  jwt.verify(token, 'secreto', (err, user) => {
+    if (err) return res.sendStatus(403);
+    req.user = user;
+    next();
+  });
+};
+
+// Helpers de Caja (turno persistente)
+async function getOrCreateCajaAbierta(db, idUsuario) {
+  // ¿Tiene caja abierta?
+  const [abierta] = await db.query(
+    "SELECT * FROM caja WHERE id_usuario = ? AND estado = 'abierta' LIMIT 1",
+    [idUsuario]
+  );
+  if (abierta.length) return abierta[0];
+
+  // Si no, crear una nueva
+  const [ins] = await db.query(
+    "INSERT INTO caja (id_usuario, estado) VALUES (?, 'abierta')",
+    [idUsuario]
+  );
+  const [nueva] = await db.query(
+    "SELECT * FROM caja WHERE id_caja = ?",
+    [ins.insertId]
+  );
+  return nueva[0];
+}
+
+async function calcularTotalCaja(db, idCaja) {
+  const [tot] = await db.query(
+    `SELECT COALESCE(SUM(dv.cantidad * dv.precio_unitario),0) AS total
+     FROM ventas v
+     JOIN detalles_venta dv ON dv.id_venta = v.id_venta
+     WHERE v.id_caja = ? AND (dv.devuelto = 0 OR dv.devuelto IS NULL)`,
+    [idCaja]
+  );
+  return Number(tot[0].total || 0);
+}
+
+
+app.post('/login', async (req, res) => {
+  const { username, password } = req.body;
+
+  console.log('Intento de login:', username, password);
+
+  if (!username || !password) {
+    return res.status(400).json({ msg: 'Por favor ingresa usuario y contraseña' });
+  }
+
+  try {
+    if (!db) {
+      return res.status(500).json({ msg: 'Error de conexión a la base de datos' });
+    }
+
+    const [results] = await db.query('SELECT * FROM usuarios WHERE usuario = ?', [username]);
+
+    if (results.length === 0) {
+      return res.status(400).json({ msg: 'Usuario no encontrado' });
+    }
+
+    const user = results[0];
+
+    if (user.estado !== 'activa') {
+      return res.status(403).json({ msg: 'Cuenta desactivada, contacta con el administrador.' });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.contraseña);
+
+    if (!isMatch) {
+      return res.status(400).json({ msg: 'Contraseña incorrecta' });
+    }
+
+    // ✅ Crear token de sesión
+    const token = jwt.sign({ id: user.id_usuario, rol: user.rol }, 'secreto', { expiresIn: '24h' });
+
+    let caja = null; // Por defecto no hay caja
+
+    // 🔹 Solo abrir caja si el rol es farmaceutico o empleado
+    if (user.rol === 'farmaceutico' || user.rol === 'empleado') {
+      caja = await getOrCreateCajaAbierta(db, user.id_usuario);
+      console.log(`💼 Caja abierta o retomada para usuario ${user.usuario} (ID: ${user.id_usuario})`);
+    } else {
+      console.log(`ℹ️ Usuario ${user.usuario} con rol "${user.rol}" no requiere caja.`);
+    }
+    // ✅ Respuesta incluyendo info de la caja
+    // ✅ Respuesta incluyendo info de la caja solo si aplica
+    return res.json({
+      token,
+      rol: user.rol,
+      user: {
+        id: user.id_usuario,
+        nombre: user.nombre,
+        usuario: user.usuario,
+        rol: user.rol,
+        estado: user.estado
+      },
+      idCaja: caja ? caja.id_caja : null,           // ✅ validación segura
+      estadoCaja: caja ? caja.estado : null,
+      fechaApertura: caja ? caja.fecha_apertura : null
+    });
+
+
+  } catch (err) {
+    console.error('Error durante el inicio de sesión:', err);
+    return res.status(500).json({ msg: 'Error del servidor' });
+  }
+});
+
+app.get('/profile', verificarToken, async (req, res) => {
+  try {
+    const [results] = await db.query('SELECT * FROM usuarios WHERE id_usuario = ?', [req.user.id]);
+
+    if (results.length === 0) return res.sendStatus(404);
+
+    const user = results[0];
+
+    res.json({
+      user: {
+        id: user.id_usuario,
+        nombre: user.nombre,
+        usuario: user.usuario,
+        rol: user.rol,
+        estado: user.estado
+      }
+    });
+  } catch (err) {
+    console.error('Error al obtener perfil:', err);
+    res.status(500).json({ msg: 'Error del servidor' });
+  }
+});
+//Fin de la ruta profile
+
+// Ruta para agregar productos
+/*app.post('/medicamentos', async (req, res) => {
+  const {
+    codigo_barra,
+    nombre,
+    descripcion,
+    precio_compra,
+    precio_venta,
+    stock,
+    modulo,
+    tipo_venta,
+    fecha_vencimiento
+  } = req.body;
+
+  const sql = `
+      INSERT INTO medicamentos 
+      (codigo_barra, nombre, Descripcion, precio_compra, precio_venta, stock, modulo, tipo_venta, Fecha_vencimiento) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+
+  try {
+    await db.query(sql, [
+      codigo_barra,
+      nombre,
+      descripcion,
+      precio_compra,
+      precio_venta,
+      stock,
+      modulo,
+      tipo_venta,
+      fecha_vencimiento
+    ]);
+    res.status(200).send('Medicamento agregado exitosamente');
+  } catch (err) {
+    console.error('Error al insertar datos en la base de datos:', err);
+    res.status(500).send('Error al insertar datos en la base de datos');
+  }
+});*/
+
+app.post('/medicamentos', async (req, res) => {
+  const { codigo_barra, nombre, descripcion, modulo, tipo_venta } = req.body;
+
+  try {
+    const [result] = await db.query(
+      `INSERT INTO medicamentos (codigo_barra, nombre, descripcion, modulo, tipo_venta)
+       VALUES (?, ?, ?, ?, ?)`,
+      [codigo_barra, nombre, descripcion, modulo, tipo_venta]
+    );
+
+    res.status(201).json({
+      id_medicamento: result.insertId,
+      message: 'Medicamento creado correctamente'
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error al crear medicamento' });
+  }
+});
+
+app.post('/proveedores', async (req, res) => {
+  const { nombre, telefono, direccion, correo } = req.body;
+
+  try {
+    await db.query(
+      `INSERT INTO proveedores (nombre, telefono, direccion, correo)
+       VALUES (?, ?, ?, ?)`,
+      [nombre, telefono, direccion, correo]
+    );
+    res.status(201).json({ message: 'Proveedor registrado correctamente' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error al registrar proveedor' });
+  }
+});
+
+app.get('/proveedores', async (req, res) => {
+  try {
+    const [rows] = await db.query(`SELECT * FROM proveedores`);
+    res.json(rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error al obtener proveedores' });
+  }
+});
+
+app.post('/lotes', async (req, res) => {
+  const {
+    id_medicamento,
+    id_proveedor,
+    fecha_vencimiento,
+    precio_compra,
+    precio_venta,
+    stock
+  } = req.body;
+
+  try {
+    await db.query(
+      `INSERT INTO lotes
+        (id_medicamento, id_proveedor, fecha_vencimiento, precio_compra, precio_venta, stock)
+      VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        id_medicamento,
+        id_proveedor,
+        fecha_vencimiento,
+        precio_compra,
+        precio_venta,
+        stock
+      ]
+    );
+
+    res.status(201).json({ message: 'Lote registrado correctamente' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error al registrar lote' });
+  }
+});
+
+app.get('/lotes/:id_medicamento', async (req, res) => {
+  const { id_medicamento } = req.params;
+
+  try {
+    const [rows] = await db.query(
+      `SELECT
+         lotes.*,
+         proveedores.nombre AS proveedor_nombre
+       FROM lotes
+       JOIN proveedores ON lotes.id_proveedor = proveedores.id_proveedor
+       WHERE lotes.id_medicamento = ?`,
+      [id_medicamento]
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error al obtener lotes' });
+  }
+});
+
+
+
+// Ruta para agregar pacientes y detalles del cliente
+app.post('/pacientes-detalles', async (req, res) => {
+  const { paciente, detalleCliente } = req.body;
+
+  const pacienteSql = 'INSERT INTO pacientes (nombre, direccion, telefono, email, fecha_nacimiento, id_cliente) VALUES (?, ?, ?, ?, ?, ?)';
+
+  try {
+    const [result] = await db.query(pacienteSql, [
+      paciente.nombre,
+      paciente.direccion,
+      paciente.telefono,
+      paciente.email,
+      paciente.fecha_nacimiento,
+      paciente.id_cliente
+    ]);
+
+    const id_paciente = result.insertId;
+
+    const detalleSql = 'INSERT INTO detalle_paciente (id_paciente, descripcion, fecha) VALUES (?, ?, ?)';
+    await db.query(detalleSql, [id_paciente, detalleCliente.descripcion_tratamiento, detalleCliente.fecha]);
+
+    res.status(200).send('Paciente y detalles guardados exitosamente');
+  } catch (err) {
+    console.error('Error al insertar el paciente o los detalles:', err);
+    res.status(500).send('Error al insertar el paciente o los detalles');
+  }
+});
+
+// Ruta para obtener los productos
+/*app.get('/vermedicamentos', async (req, res) => {
+  try {
+    // Ordena los productos por la columna 'stock' en orden ascendente
+    const [productos] = await db.query('SELECT * FROM medicamentos ORDER BY stock ASC');
+    res.json(productos);
+  } catch (err) {
+    console.error('Error al obtener los productos:', err);
+    res.status(500).json({ message: 'Error al obtener los productos' });
+  }
+});*/
+
+app.get('/lote/todo', async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT
+        lotes.*,
+        medicamentos.nombre,
+        medicamentos.descripcion,
+        medicamentos.codigo_barra,
+        medicamentos.modulo,
+        medicamentos.tipo_venta,
+        proveedores.nombre AS proveedor_nombre
+      FROM lotes
+      JOIN medicamentos ON lotes.id_medicamento = medicamentos.id_medicamento
+      JOIN proveedores ON lotes.id_proveedor = proveedores.id_proveedor
+    `);
+
+    console.log("✅ Lotes encontrados:", rows);
+
+    res.json(rows);
+  } catch (err) {
+    console.error('❌ Error al obtener los lotes:', err);
+    res.status(500).json({ message: 'Error al obtener los lotes' });
+  }
+});
+
+/*app.get('/lote/todo', async (req, res) => {
+  const mysql = require('mysql2/promise');
+  try {
+    // Crear conexión directa
+    const connection = await mysql.createConnection({
+      host: process.env.DB_HOST,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
+      port: process.env.DB_PORT
+    });
+
+    const [rows] = await connection.query(`
+      SELECT
+        l.id_lote,
+        l.id_medicamento,
+        l.id_proveedor,
+        l.fecha_vencimiento,
+        l.precio_compra,
+        l.precio_venta,
+        l.stock,
+        (SELECT m.nombre FROM medicamentos m WHERE m.id_medicamento = l.id_medicamento) AS nombre,
+        (SELECT m.descripcion FROM medicamentos m WHERE m.id_medicamento = l.id_medicamento) AS descripcion,
+        (SELECT m.codigo_barra FROM medicamentos m WHERE m.id_medicamento = l.id_medicamento) AS codigo_barra,
+        (SELECT m.modulo FROM medicamentos m WHERE m.id_medicamento = l.id_medicamento) AS modulo,
+        (SELECT m.tipo_venta FROM medicamentos m WHERE m.id_medicamento = l.id_medicamento) AS tipo_venta,
+        (SELECT p.nombre FROM proveedores p WHERE p.id_proveedor = l.id_proveedor) AS proveedor_nombre
+      FROM lotes l
+    `);
+
+    await connection.end();
+    console.log("✅ /lotes/todos (conexion directa):", rows);
+    res.json(rows);
+
+  } catch (err) {
+    console.error("❌ Error en /lotes/todos:", err);
+    res.status(500).json({ message: 'Error al obtener lotes' });
+  }
+});*/
+
+
+app.get('/test-lotes', async (req, res) => {
+  try {
+    const mysql = require('mysql2/promise');
+    const connection = await mysql.createConnection({
+      host: process.env.DB_HOST,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
+      port: process.env.DB_PORT
+    });
+
+    const [rows] = await connection.query("SELECT * FROM lotes");
+    await connection.end();
+    console.log("🔍 /test-lotes:", rows);
+    res.json(rows);
+  } catch (err) {
+    console.error("❌ Error en /test-lotes:", err);
+    res.status(500).json({ error: 'Error en test-lotes' });
+  }
+});
+
+
+app.get('/lotes/simple', async (req, res) => {
+  try {
+    const [rows] = await db.query("SELECT * FROM lotes");
+    console.log("✅ Lotes simples:", rows);
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error al consultar lotes' });
+  }
+});
+
+app.get('/lotes/count', async (req, res) => {
+  try {
+    const [rows] = await db.query("SELECT COUNT(*) AS total FROM lotes");
+    console.log("✅ Total de lotes:", rows[0].total);
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error al contar lotes' });
+  }
+});
+
+app.get('/debug-tables', async (req, res) => {
+  try {
+    const [tables] = await db.query("SHOW TABLES");
+    console.log("Tablas en la base:", tables);
+    res.json(tables);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al listar tablas' });
+  }
+});
+
+
+app.get('/lotes/buscar', async (req, res) => {
+  const { nombre } = req.query;
+
+  try {
+    const [rows] = await db.query(`
+      SELECT
+        lotes.*,
+        medicamentos.nombre,
+        medicamentos.descripcion,
+        medicamentos.codigo_barra,
+        medicamentos.modulo,
+        medicamentos.tipo_venta,
+        proveedores.nombre AS proveedor_nombre
+      FROM lotes
+      JOIN medicamentos ON lotes.id_medicamento = medicamentos.id_medicamento
+      JOIN proveedores ON lotes.id_proveedor = proveedores.id_proveedor
+      WHERE medicamentos.nombre LIKE ?
+    `, [`%${nombre}%`]);
+
+    res.json(rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error al buscar lotes' });
+  }
+});
+
+app.get('/lotes/prueba', async (req, res) => {
+  try {
+    const [rows] = await db.query("SELECT * FROM lotes");
+    console.log("Prueba directa lotes:", rows);
+    res.json(rows);
+  } catch (err) {
+    console.error("Error en /lotes/prueba:", err);
+    res.status(500).json({ error: 'Error en prueba' });
+  }
+});
+
+
+/*
+app.get('/buscar_medicamentos', async (req, res) => {
+  const { nombre } = req.query;
+
+  const sql = `SELECT nombre FROM medicamentos WHERE nombre LIKE ? LIMIT 5`;
+  try {
+    const [result] = await db.query(sql, [`%${nombre}%`]);
+    res.status(200).json(result);
+  } catch (err) {
+    console.error('Error al buscar medicamentos:', err);
+    res.status(500).send('Error al buscar medicamentos');
+  }
+});*/
+
+app.get('/buscar_medicamentos', async (req, res) => {
+  const { nombre } = req.query;
+
+  try {
+    const [rows] = await db.query(
+      `SELECT * FROM medicamentos WHERE nombre LIKE ?`,
+      [`%${nombre}%`]
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error al buscar medicamentos' });
+  }
+});
+
+
+/*app.get('/buscar_medicamentos', async (req, res) => {
+  const { nombre, codigo_barra } = req.query;
+ 
+  let sql = 'SELECT * FROM medicamentos WHERE 1=1'; // Comienza la consulta
+ 
+  const params = []; // Almacenará los parámetros para la consulta
+ 
+  // Agregar condición de búsqueda por nombre si se proporciona
+  if (nombre) {
+    sql += ' AND nombre LIKE ?';
+    params.push(`%${nombre}%`);
+  }
+ 
+  // Agregar condición de búsqueda por código de barras si se proporciona
+  if (codigo_barra) {
+    sql += ' AND codigo_barra = ?';
+    params.push(codigo_barra);
+  }
+ 
+  sql += ' LIMIT 5'; // Limitar los resultados a 5
+ 
+  try {
+    const [result] = await db.query(sql, params);
+    res.status(200).json(result);
+  } catch (err) {
+    console.error('Error al buscar medicamentos:', err);
+    res.status(500).send('Error al buscar medicamentos');
+  }
+});
+
+
+app.get('/medicamentos/relacionados/:nombre', async (req, res) => {
+  const { nombre } = req.params;
+
+  const sql = `
+      SELECT nombre, descripcion, modulo, tipo_venta
+      FROM medicamentos
+      WHERE nombre LIKE ?
+    `;
+
+  try {
+    const [results] = await db.query(sql, [`%${nombre}%`]);
+    res.json(results);
+  } catch (err) {
+    console.error('Error al buscar medicamentos relacionados:', err);
+    res.status(500).send('Error al buscar medicamentos relacionados');
+  }
+});*/
+
+app.get('/medicamentos/relacionados/:nombre', async (req, res) => {
+  const { nombre } = req.params;
+
+  try {
+    const [rows] = await db.query(
+      `SELECT * FROM medicamentos WHERE nombre LIKE ?`,
+      [`%${nombre}%`]
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error al buscar medicamentos relacionados' });
+  }
+});
+
+
+/*app.post('/realizarventa', async (req, res) => {
+   const cart = req.body;
+ 
+   try {
+     for (let medicamentos of cart) {
+       // Reducir el stock del producto en la base de datos
+       await db.query('UPDATE medicamentos SET stock = stock - 1 WHERE id_medicamento = ?', [medicamentos.id_medicamento]);
+     }
+     res.status(200).json({ message: 'Venta realizada con éxito' });
+   } catch (err) {
+     console.error('Error al realizar la venta:', err);
+     res.status(500).json({ message: 'Error al realizar la venta' });
+   }
+ });*/
+
+// Reemplazo completo de /realizarventa
+app.post('/realizarventa', async (req, res) => {
+  const cart = req.body;
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  let connection; // ✅ <-- declarar antes del try
+
+  if (!token) return res.status(401).json({ message: 'Token no proporcionado' });
+
+  try {
+    const decoded = jwt.verify(token, 'secreto');
+    const idUsuario = decoded.id;
+
+    // 🔹 Buscar la caja abierta del usuario
+    const [cajas] = await db.query(
+      "SELECT id_caja FROM caja WHERE id_usuario = ? AND estado = 'abierta' LIMIT 1",
+      [idUsuario]
+    );
+    if (!cajas.length) {
+      return res.status(400).json({ message: 'No hay caja abierta para este usuario' });
+    }
+    const idCaja = cajas[0].id_caja;
+
+    console.log(`🧾 Venta vinculada a usuario ${idUsuario} y caja ${idCaja}`);
+
+    // ✅ ahora sí asignamos la conexión
+    connection = await db.getConnection();
+    await connection.beginTransaction();
+
+    // Crear la venta vinculada al usuario y la caja
+    const [ventaResult] = await connection.query(
+      'INSERT INTO ventas (fecha, id_usuario, id_caja) VALUES (NOW(), ?, ?)',
+      [idUsuario, idCaja]
+    );
+    const idVenta = ventaResult.insertId;
+
+    // Procesar cada ítem del carrito
+    for (let item of cart) {
+      const id_lote = item.id_lote;
+      const cantidad = item.cantidad || 0;
+
+      if (isNaN(cantidad) || cantidad <= 0) {
+        throw new Error('Cantidad inválida');
+      }
+
+      const [rows] = await connection.query(
+        `SELECT lotes.*, medicamentos.nombre
+         FROM lotes
+         JOIN medicamentos ON lotes.id_medicamento = medicamentos.id_medicamento
+         WHERE lotes.id_lote = ?`,
+        [id_lote]
+      );
+
+      if (rows.length === 0) throw new Error(`Lote ${id_lote} no encontrado`);
+
+      const lote = rows[0];
+      if (lote.stock < cantidad) throw new Error(`Stock insuficiente para ${lote.nombre}`);
+
+      await connection.query(
+        `UPDATE lotes SET stock = stock - ? WHERE id_lote = ?`,
+        [cantidad, id_lote]
+      );
+
+      await connection.query(
+        `INSERT INTO detalles_venta
+         (id_venta, id_medicamento, cantidad, precio_unitario, id_lote)
+         VALUES (?, ?, ?, ?, ?)`,
+        [idVenta, lote.id_medicamento, cantidad, lote.precio_venta, id_lote]
+      );
+    }
+
+    await connection.commit();
+    res.status(200).json({ message: 'Venta realizada con éxito', idVenta, idCaja });
+
+  } catch (err) {
+    console.error('❌ Error al realizar la venta:', err);
+    if (connection) await connection.rollback(); // ahora sí existe la variable
+    res.status(500).json({ message: 'Error al realizar la venta', error: err.message });
+  } finally {
+    if (connection) connection.release(); // ✅ ya no rompe
+  }
+});
+
+
+
+
+app.get('/caja/estado', verificarToken, async (req, res) => {
+  try {
+    const idUsuario = req.user.id;
+    const caja = await getOrCreateCajaAbierta(db, idUsuario);
+    const total = await calcularTotalCaja(db, caja.id_caja);
+
+    res.json({
+      idCaja: caja.id_caja,
+      estado: caja.estado,
+      fecha_apertura: caja.fecha_apertura,
+      total_ventas_hasta_ahora: total.toFixed(2)
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'No se pudo obtener estado de caja' });
+  }
+});
+
+/*app.get('/caja/estado', verificarToken, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT * FROM caja WHERE id_usuario = ? ORDER BY id_caja DESC LIMIT 1',
+      [req.user.id_usuario]
+    );
+
+    if (rows.length === 0) {
+      return res.json({ estado: 'sin caja' });
+    }
+
+    const caja = rows[0];
+    const total_general = parseFloat(caja.monto_apertura || 0) + parseFloat(caja.total_ventas || 0);
+
+    res.json({
+      estado: caja.estado,
+      monto_apertura: caja.monto_apertura,
+      total_ventas_hasta_ahora: caja.total_ventas,
+      total_general,
+      fecha_apertura: caja.fecha_apertura
+    });
+  } catch (error) {
+    console.error('Error al obtener estado de caja:', error);
+    res.status(500).json({ error: 'Error al obtener estado de caja' });
+  }
+});*/
+
+
+
+
+// Abrir una caja con monto de apertura
+app.post('/caja/abrir', verificarToken, async (req, res) => {
+  const { monto_apertura } = req.body;
+  const id_usuario = req.user.id_usuario;
+
+  try {
+    // Cerrar cualquier caja abierta anterior
+    await pool.query(
+      'UPDATE caja SET estado = "cerrada", fecha_cierre = NOW(), monto_cierre = total_ventas WHERE estado = "abierta" AND id_usuario = ?',
+      [id_usuario]
+    );
+
+    // Crear nueva caja
+    await pool.query(
+      'INSERT INTO caja (id_usuario, fecha_apertura, monto_apertura, estado, total_ventas) VALUES (?, NOW(), ?, "abierta", 0)',
+      [id_usuario, monto_apertura]
+    );
+
+    res.json({ message: 'Caja abierta con éxito', monto_apertura });
+  } catch (error) {
+    console.error('Error al abrir caja:', error);
+    res.status(500).json({ error: 'Error al abrir la caja' });
+  }
+});
+
+
+app.post('/caja/cerrar', verificarToken, async (req, res) => {
+  const idUsuario = req.user.id;
+  let conn;
+  try {
+    // Buscar caja abierta
+    const [abiertas] = await db.query(
+      "SELECT * FROM caja WHERE id_usuario = ? AND estado = 'abierta' LIMIT 1",
+      [idUsuario]
+    );
+    if (!abiertas.length) {
+      return res.status(400).json({ msg: 'No tenés caja abierta.' });
+    }
+    const caja = abiertas[0];
+
+    const total = await calcularTotalCaja(db, caja.id_caja);
+
+    conn = await db.getConnection();
+    await conn.beginTransaction();
+    await conn.query(
+      `UPDATE caja
+       SET estado='cerrada', fecha_cierre=NOW(), total_ventas=?
+       WHERE id_caja = ?`,
+      [total, caja.id_caja]
+    );
+    await conn.commit();
+
+    res.json({
+      msg: 'Caja cerrada correctamente',
+      idCaja: caja.id_caja,
+      total: total.toFixed(2)
+    });
+  } catch (e) {
+    if (conn) await conn.rollback();
+    console.error(e);
+    res.status(500).json({ error: 'No se pudo cerrar la caja' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+
+app.get('/caja/:idCaja/ventas', verificarToken, async (req, res) => {
+  const { idCaja } = req.params;
+  const idUsuario = req.user.id;
+
+  try {
+    const [cajas] = await db.query(
+      'SELECT * FROM caja WHERE id_caja = ? AND id_usuario = ?',
+      [idCaja, idUsuario]
+    );
+
+    if (cajas.length === 0) {
+      return res.status(403).json({ error: 'No tienes acceso a esta caja o no existe.' });
+    }
+
+    const [rows] = await db.query(
+      `SELECT v.id_venta, v.fecha,
+              SUM(dv.cantidad * dv.precio_unitario) AS total_venta
+       FROM ventas v
+       JOIN detalles_venta dv ON dv.id_venta = v.id_venta
+       WHERE v.id_caja = ?
+       GROUP BY v.id_venta, v.fecha
+       ORDER BY v.id_venta DESC`,
+      [idCaja]
+    );
+
+    res.json(rows);
+  } catch (e) {
+    console.error('❌ Error al obtener ventas de la caja:', e);
+    res.status(500).json({ error: 'No se pudo obtener ventas del turno' });
+  }
+});
+
+
+
+app.get('/cierres', verificarToken, async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT c.id_caja, u.nombre AS usuario, c.fecha_apertura, c.fecha_cierre,
+              c.total_ventas, c.estado
+       FROM caja c
+       JOIN usuarios u ON u.id_usuario = c.id_usuario
+       ORDER BY c.fecha_apertura DESC`
+    );
+    res.json(rows);
+  } catch (e) {
+    console.error('❌ Error al obtener cierres:', e);
+    res.status(500).json({ error: 'No se pudo obtener cierres' });
+  }
+});
+
+
+
+app.get('/medicamentos/lista', async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT
+        l.id_lote,
+        m.nombre AS nombre_medicamento,
+        m.codigo_barra,
+        m.descripcion,
+        l.stock,
+        l.precio_venta,
+        l.fecha_vencimiento,
+        p.nombre AS proveedor_nombre,
+        p.telefono AS proveedor_telefono,
+        p.correo AS proveedor_correo
+      FROM lotes l
+      JOIN medicamentos m ON l.id_medicamento = m.id_medicamento
+      JOIN proveedores p ON l.id_proveedor = p.id_proveedor
+      ORDER BY m.nombre ASC, l.fecha_vencimiento ASC
+    `);
+    res.json(rows);
+  } catch (err) {
+    console.error('Error al obtener lista de medicamentos:', err);
+    res.status(500).json({ message: 'Error al obtener lista de medicamentos' });
+  }
+});
+
+
+
+app.get('/verhistorial', async (req, res) => {
+  const query = `SELECT id, nombre_paciente, direccion, fecha_consulta, diagnostico, sintomas, tratamiento, sexo, religion, medico_responsable, medicamentos_recetados, dpi 
+                   FROM historial_medico 
+                   ORDER BY fecha_consulta DESC`; // Ordenar por fecha de consulta más reciente
+
+  try {
+    const [results] = await db.query(query);
+    const pacientes = results.map((paciente) => ({
+      ...paciente,
+      medicamentos_recetados: JSON.parse(paciente.medicamentos_recetados) || []
+    }));
+    res.json(pacientes);
+  } catch (err) {
+    console.error('Error al obtener los datos:', err);
+    res.status(500).send('Error al obtener los datos');
+  }
+});
+
+// Endpoint para agregar nuevo historial médico
+app.post('/historial-medico', async (req, res) => {
+  const {
+    nombre_paciente,
+    fecha_consulta,
+    diagnostico,
+    sintomas,
+    sexo,
+    religion,
+    medico_responsable,
+    medicamentos_recetados,
+    dpi,
+    telefono,
+    fecha_nacimiento,
+    antecedentes_medico,
+    antecedentes_quirurgico,
+    antecedentes_alergico,
+    antecedentes_traumaticos,
+    antecedentes_familiares,
+    antecedentes_vicios_y_manias
+  } = req.body;
+
+  try {
+    // 1. Verificar si el paciente ya existe
+    const [pacienteRows] = await db.query('SELECT id_paciente FROM pacientes WHERE dpi = ?', [dpi]);
+    let id_paciente;
+
+    if (pacienteRows.length > 0) {
+      id_paciente = pacienteRows[0].id_paciente;
+    } else {
+      const [insertPaciente] = await db.query(`
+          INSERT INTO pacientes (nombre, dpi, telefono, fecha_nacimiento, sexo, religion)
+          VALUES (?, ?, ?, ?, ?, ?)`,
+        [nombre_paciente, dpi, telefono, fecha_nacimiento, sexo, religion]
+      );
+      id_paciente = insertPaciente.insertId;
+    }
+
+    // 2. Formatear los medicamentos recetados
+    const medicamentosFormateados = medicamentos_recetados
+      .filter(m => m.nombre && typeof m.nombre === 'string')
+      .map(m => {
+        const modo = m.modo_administracion || '';
+        const cantidad = m.cantidad || '';
+        const unidad = m.unidad || '';
+        const comentario = m.comentario ? ` ${m.comentario}` : '';
+        return `${m.nombre} ${modo} ${cantidad} ${unidad}${comentario}`.trim();
+      })
+      .join(' | ');
+
+    // 3. Insertar en historial_medico
+    const [historialInsert] = await db.query(
+      `INSERT INTO historial_medico 
+        (id_paciente, fecha_consulta, diagnostico, sintomas, medico_responsable, medicamentos_recetados)
+        VALUES (?, ?, ?, ?, ?, ?)`,
+      [id_paciente, fecha_consulta, diagnostico, sintomas, medico_responsable, medicamentosFormateados]
+    );
+
+    const id_historial = historialInsert.insertId;
+
+    // 4. Insertar antecedentes médicos
+    await db.query(
+      `INSERT INTO antecedentes_medicos 
+        (id_historial, antecedentes_medico, antecedentes_quirurgico, antecedentes_alergico, antecedentes_traumaticos, antecedentes_familiares, antecedentes_vicios_y_manias) 
+        VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id_historial,
+        antecedentes_medico,
+        antecedentes_quirurgico,
+        antecedentes_alergico,
+        antecedentes_traumaticos,
+        antecedentes_familiares,
+        antecedentes_vicios_y_manias,
+      ]
+    );
+
+    res.status(201).send('Historial médico y antecedentes guardados exitosamente');
+
+  } catch (err) {
+    console.error('Error al guardar el historial médico y antecedentes:', err);
+    res.status(500).send('Error al guardar el historial médico y antecedentes');
+  }
+});
+
+
+
+/*
+app.post('/agregar_usuario', async (req, res) => {
+  const { nombre, usuario, contrasena, rol, estado } = req.body;
+
+  try {
+    // Generar un salt y luego encriptar la contraseña
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(contrasena, salt);
+
+    const query = `
+      INSERT INTO usuarios (nombre, usuario, contraseña, rol, estado)
+      VALUES (?, ?, ?, ?, ?)
+    `;
+    await db.query(query, [nombre, usuario, hashedPassword, rol, estado]);
+
+    res.status(201).send('Usuario agregado exitosamente');
+  } catch (error) {
+    console.error('Error al agregar usuario:', error);
+    res.status(500).send('Error al agregar usuario');
+  }
+});
+*/
+
+app.post('/agregar_usuario', async (req, res) => {
+  const { nombre, usuario, contrasena, rol, estado } = req.body;
+
+  try {
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(contrasena, salt);
+
+    const [rows] = await db.query('SELECT * FROM usuarios WHERE usuario = ?', [usuario]);
+
+    if (rows.length > 0) {
+      // Usuario ya existe → actualizar
+      const updateQuery = `
+        UPDATE usuarios 
+        SET nombre = ?, contraseña = ?, rol = ?, estado = ?
+        WHERE usuario = ?
+      `;
+      await db.query(updateQuery, [nombre, hashedPassword, rol, estado, usuario]);
+      res.status(200).json({ message: 'Usuario actualizado exitosamente' });
+    } else {
+      // Usuario no existe → insertar
+      const insertQuery = `
+        INSERT INTO usuarios (nombre, usuario, contraseña, rol, estado)
+        VALUES (?, ?, ?, ?, ?)
+      `;
+      await db.query(insertQuery, [nombre, usuario, hashedPassword, rol, estado]);
+      res.status(201).json({ message: 'Usuario agregado exitosamente' });
+    }
+  } catch (error) {
+    console.error('Error al agregar o actualizar usuario:', error);
+    res.status(500).json({ message: 'Error al procesar la solicitud' });
+  }
+});
+
+// OBTENER USUARIOS
+app.get('/usuarios', async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT id_usuario, nombre, usuario, rol, estado
+      FROM usuarios
+    `);
+    res.json(rows);
+  } catch (error) {
+    console.error('Error al obtener usuarios:', error);
+    res.status(500).json({ message: 'Error al obtener usuarios' });
+  }
+});
+
+// ACTUALIZAR USUARIO
+app.put('/usuarios/:id', async (req, res) => {
+  const { id } = req.params;
+  const { nombre, usuario, rol, estado } = req.body;
+
+  try {
+    const updateQuery = `
+      UPDATE usuarios
+      SET nombre = ?, usuario = ?, rol = ?, estado = ?
+      WHERE id_usuario = ?
+    `;
+    await db.query(updateQuery, [nombre, usuario, rol, estado, id]);
+
+    res.status(200).json({ message: 'Usuario actualizado correctamente' });
+  } catch (error) {
+    console.error('Error al actualizar usuario:', error);
+    res.status(500).json({ message: 'Error al actualizar usuario' });
+  }
+});
+
+
+
+// Ruta para obtener todos los pacientes y permitir búsqueda por nombre o DPI
+// Ruta para obtener todos los pacientes y permitir búsqueda por nombre o DPI
+// Ruta para obtener todos los pacientes y permitir búsqueda por nombre o DPI
+app.get('/buscar_pacientes', async (req, res) => {
+  const { nombre, dpi } = req.query;
+
+  let sql = `
+  SELECT 
+    h.id, h.fecha_consulta, h.diagnostico, h.sintomas, h.medicamentos_recetados, h.medico_responsable,
+    p.id_paciente, p.nombre AS nombre_paciente, p.dpi, p.telefono, p.fecha_nacimiento, p.sexo, p.religion,
+    a.antecedentes_medico, a.antecedentes_quirurgico, a.antecedentes_alergico, 
+    a.antecedentes_traumaticos, a.antecedentes_familiares, a.antecedentes_vicios_y_manias
+  FROM historial_medico h
+  JOIN pacientes p ON h.id_paciente = p.id_paciente
+  LEFT JOIN antecedentes_medicos a ON h.id = a.id_historial
+  WHERE 1 = 1
+`;
+
+
+  const params = [];
+
+  if (nombre) {
+    sql += ' AND p.nombre LIKE ?';
+    params.push(`%${nombre}%`);
+  }
+
+  if (dpi) {
+    sql += ' AND p.dpi LIKE ?';
+    params.push(`%${dpi}%`);
+  }
+
+  sql += ' ORDER BY h.fecha_consulta DESC';
+
+  try {
+    const [result] = await db.query(sql, params);
+
+    const pacientes = result.map((paciente) => ({
+      ...paciente,
+      medicamentos_recetados: typeof paciente.medicamentos_recetados === 'string'
+        ? paciente.medicamentos_recetados.split(',').map(m => m.trim())
+        : [],
+      antecedentes_medico: paciente.antecedentes_medico || '',
+      antecedentes_quirurgico: paciente.antecedentes_quirurgico || '',
+      antecedentes_alergico: paciente.antecedentes_alergico || '',
+      antecedentes_traumaticos: paciente.antecedentes_traumaticos || '',
+      antecedentes_familiares: paciente.antecedentes_familiares || '',
+      antecedentes_vicios_y_manias: paciente.antecedentes_vicios_y_manias || ''
+    }));
+
+    res.status(200).json(pacientes);
+  } catch (err) {
+    console.error('Error al buscar pacientes:', err);
+    res.status(500).json({ message: 'Error al buscar pacientes' });
+  }
+});
+
+
+
+// Función para asegurarnos de enviar solo fecha yyyy-MM-dd
+const formatearFecha = (fecha) => {
+  if (!fecha) return null; // Si viene vacío, guardamos NULL en base de datos
+  return fecha.slice(0, 10); // Cortamos solo los primeros 10 caracteres
+};
+
+app.put('/actualizar_paciente/:id', async (req, res) => {
+  const { id } = req.params;
+
+  const {
+    nombre_paciente,
+    dpi,
+    fecha_consulta,
+    fecha_nacimiento,
+    sexo,
+    religion,
+    telefono,
+    medico_responsable,
+    diagnostico,
+    medicamentos_recetados,
+    antecedentes_medico,
+    antecedentes_quirurgico,
+    antecedentes_alergico,
+    antecedentes_traumaticos,
+    antecedentes_familiares,
+    antecedentes_vicios_y_manias
+  } = req.body;
+
+  try {
+    // 1. Buscar el ID del paciente relacionado al historial
+    const [historialResult] = await db.query(
+      'SELECT id_paciente FROM historial_medico WHERE id = ?',
+      [id]
+    );
+
+    if (historialResult.length === 0) {
+      return res.status(404).json({ message: 'Historial no encontrado' });
+    }
+
+    const id_paciente = historialResult[0].id_paciente;
+
+    // 2. Actualizar tabla pacientes
+    const sqlPaciente = `
+      UPDATE pacientes
+      SET 
+        nombre = ?, 
+        dpi = ?, 
+        fecha_nacimiento = ?, 
+        sexo = ?, 
+        religion = ?, 
+        telefono = ?
+      WHERE id_paciente = ?
+    `;
+
+    await db.query(sqlPaciente, [
+      nombre_paciente,
+      dpi,
+      formatearFecha(fecha_nacimiento),
+      sexo,
+      religion,
+      telefono,
+      id_paciente
+    ]);
+
+    // 3. Actualizar historial médico
+    const sqlHistorial = `
+      UPDATE historial_medico
+      SET 
+        fecha_consulta = ?, 
+        diagnostico = ?, 
+        medico_responsable = ?, 
+        medicamentos_recetados = ?
+      WHERE id = ?
+    `;
+
+    await db.query(sqlHistorial, [
+      formatearFecha(fecha_consulta),
+      diagnostico,
+      medico_responsable,
+      Array.isArray(medicamentos_recetados) ? medicamentos_recetados.join(', ') : medicamentos_recetados,
+      id
+    ]);
+
+    // 4. Actualizar antecedentes médicos
+    const sqlAntecedentes = `
+      UPDATE antecedentes_medicos
+      SET 
+        antecedentes_medico = ?, 
+        antecedentes_quirurgico = ?, 
+        antecedentes_alergico = ?, 
+        antecedentes_traumaticos = ?, 
+        antecedentes_familiares = ?, 
+        antecedentes_vicios_y_manias = ?
+      WHERE id_historial = ?
+    `;
+
+    await db.query(sqlAntecedentes, [
+      antecedentes_medico,
+      antecedentes_quirurgico,
+      antecedentes_alergico,
+      antecedentes_traumaticos,
+      antecedentes_familiares,
+      antecedentes_vicios_y_manias,
+      id
+    ]);
+
+    res.status(200).json({ message: 'Paciente actualizado correctamente' });
+
+  } catch (error) {
+    console.error('Error actualizando paciente:', error);
+    res.status(500).json({ message: 'Error actualizando paciente' });
+  }
+});
+
+
+
+
+// Ruta para obtener los pacientes
+// Ruta para obtener los pacientes con sus detalles de tratamiento
+app.get('/verpacientes', async (req, res) => {
+  const sql = `
+      SELECT p.id_paciente, p.nombre, p.direccion, p.telefono, p.email, p.fecha_nacimiento, p.id_cliente, 
+             d.id_detalle_paciente, d.descripcion, d.tratamiento, d.fecha
+      FROM pacientes p
+      LEFT JOIN detalle_paciente d ON p.id_paciente = d.id_paciente
+    `;
+
+  try {
+    const [pacientes] = await db.query(sql);
+    res.json(pacientes);
+  } catch (err) {
+    console.error('Error al obtener los pacientes y sus detalles:', err);
+    res.status(500).json({ message: 'Error al obtener los pacientes y sus detalles' });
+  }
+});
+
+
+app.delete('/eliminar_historial/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    console.log(`🩺 Eliminando historial médico con ID ${id}...`);
+
+    // 1️⃣ Eliminar antecedentes relacionados
+    await db.query('DELETE FROM antecedentes_medicos WHERE id_historial = ?', [id]);
+
+    // 2️⃣ Eliminar detalles de venta si los hubiera
+    await db.query('DELETE FROM detalles_venta WHERE id_historial = ?', [id]);
+    await db.query('DELETE FROM ventas WHERE id_historial = ?', [id]);
+
+    // 3️⃣ Eliminar encamamiento asociado (opcional)
+    await db.query('UPDATE encamamiento SET id_historial = NULL WHERE id_historial = ?', [id]);
+
+    // 4️⃣ Eliminar el historial médico
+    const [result] = await db.query('DELETE FROM historial_medico WHERE id = ?', [id]);
+
+    if (result.affectedRows > 0) {
+      res.status(200).json({ message: '✅ Historial eliminado correctamente' });
+    } else {
+      res.status(404).json({ message: 'Historial no encontrado' });
+    }
+
+  } catch (error) {
+    console.error('❌ Error al eliminar historial médico:', error);
+    res.status(500).json({ message: 'Error al eliminar historial médico', error });
+  }
+});
+
+
+
+
+// Ruta para obtener los pacientes con sus detalles de tratamiento
+app.get('/verpacientes', async (req, res) => {
+  const sql = `
+      SELECT p.id_paciente, p.nombre, p.direccion, p.telefono, p.email, p.fecha_nacimiento, p.id_cliente, 
+             d.id_detalle_paciente, d.descripcion, d.tratamiento, d.fecha
+      FROM pacientes p
+      LEFT JOIN detalle_paciente d ON p.id_paciente = d.id_paciente
+    `;
+
+  try {
+    const [pacientes] = await db.query(sql);
+    res.json(pacientes);
+  } catch (err) {
+    console.error('Error al obtener los pacientes y sus detalles:', err);
+    res.status(500).json({ message: 'Error al obtener los pacientes y sus detalles' });
+  }
+});
+
+// Ruta para obtener un paciente por ID
+app.get('/pacientes/:id', async (req, res) => {
+  const { id } = req.params;
+  const sql = `
+      SELECT p.id_paciente, p.nombre, p.direccion, p.telefono, p.email, p.fecha_nacimiento, p.id_cliente, 
+             d.id_detalle_paciente, d.descripcion, d.tratamiento, d.fecha
+      FROM pacientes p
+      LEFT JOIN detalle_paciente d ON p.id_paciente = d.id_paciente
+      WHERE p.id_paciente = ?
+    `;
+
+  try {
+    const [result] = await db.query(sql, [id]);
+    if (result.length > 0) {
+      res.json(result[0]);
+    } else {
+      res.status(404).json({ message: 'Paciente no encontrado' });
+    }
+  } catch (err) {
+    console.error('Error al obtener el paciente:', err);
+    res.status(500).json({ message: 'Error al obtener el paciente' });
+  }
+});
+
+// 📅 REPORTE DIARIO
+app.get('/sales/:date', async (req, res) => {
+  const selectedDate = req.params.date;
+
+  const queryAllSales = `
+    SELECT 
+      dv.id_medicamento, 
+      SUM(dv.cantidad) AS cantidad_total, 
+      dv.precio_unitario, 
+      m.nombre AS medicamento, 
+      dv.devuelto, 
+      SUM(dv.cantidad * dv.precio_unitario) AS total_ventas
+    FROM detalles_venta dv
+    JOIN lotes l ON dv.id_lote = l.id_lote
+    JOIN medicamentos m ON l.id_medicamento = m.id_medicamento
+    JOIN ventas v ON dv.id_venta = v.id_venta
+    WHERE DATE(v.fecha) = ? 
+    GROUP BY dv.id_medicamento, dv.precio_unitario, m.nombre, dv.devuelto;
+  `;
+
+  const queryNonReturnedSales = `
+    SELECT 
+      SUM(dv.cantidad * dv.precio_unitario) AS total_ventas,
+      SUM(dv.cantidad) AS cantidad_total, 
+      dv.precio_unitario, 
+      SUM(dv.cantidad * l.precio_compra) AS total_cost
+    FROM detalles_venta dv
+    JOIN lotes l ON dv.id_lote = l.id_lote
+    JOIN medicamentos m ON l.id_medicamento = m.id_medicamento
+    JOIN ventas v ON dv.id_venta = v.id_venta
+    WHERE DATE(v.fecha) = ? AND dv.devuelto = 0
+    GROUP BY dv.id_medicamento, dv.precio_unitario;
+  `;
+
+  try {
+    const [allSalesResults] = await db.query(queryAllSales, [selectedDate]);
+    const [nonReturnedResults] = await db.query(queryNonReturnedSales, [selectedDate]);
+
+    let totalSales = 0;
+    let totalCost = 0;
+
+    nonReturnedResults.forEach(item => {
+      totalSales += parseFloat(item.total_ventas) || 0;
+      totalCost += parseFloat(item.total_cost) || 0;
+    });
+
+    res.json({
+      totalSales: totalSales.toFixed(2),
+      totalCost: totalCost.toFixed(2),
+      profit: (totalSales - totalCost).toFixed(2),
+      details: allSalesResults.map(item => ({
+        medicamento: item.medicamento,
+        cantidad: item.cantidad_total,
+        precio_unitario: item.precio_unitario,
+        devuelto: item.devuelto
+      }))
+    });
+  } catch (err) {
+    console.error('Error al obtener el reporte diario:', err);
+    res.status(500).json({ error: 'Error al obtener el reporte diario' });
+  }
+});
+
+
+// 📆 REPORTE SEMANAL
+app.get('/sales/week/:date', async (req, res) => {
+  const selectedDate = req.params.date;
+
+  const queryAllSales = `
+    SELECT 
+      dv.id_medicamento, 
+      SUM(dv.cantidad) AS cantidad_total, 
+      dv.precio_unitario, 
+      m.nombre AS medicamento, 
+      dv.devuelto, 
+      SUM(dv.cantidad * dv.precio_unitario) AS total_ventas
+    FROM detalles_venta dv
+    JOIN lotes l ON dv.id_lote = l.id_lote
+    JOIN medicamentos m ON l.id_medicamento = m.id_medicamento
+    JOIN ventas v ON dv.id_venta = v.id_venta
+    WHERE WEEK(v.fecha) = WEEK(?)
+    GROUP BY dv.id_medicamento, dv.precio_unitario, m.nombre, dv.devuelto;
+  `;
+
+  const queryNonReturnedSales = `
+    SELECT 
+      SUM(dv.cantidad * dv.precio_unitario) AS total_ventas,
+      SUM(dv.cantidad) AS cantidad_total, 
+      dv.precio_unitario, 
+      SUM(dv.cantidad * l.precio_compra) AS total_cost
+    FROM detalles_venta dv
+    JOIN lotes l ON dv.id_lote = l.id_lote
+    JOIN medicamentos m ON l.id_medicamento = m.id_medicamento
+    JOIN ventas v ON dv.id_venta = v.id_venta
+    WHERE WEEK(v.fecha) = WEEK(?) AND dv.devuelto = 0
+    GROUP BY dv.id_medicamento, dv.precio_unitario;
+  `;
+
+  try {
+    const [allSalesResults] = await db.query(queryAllSales, [selectedDate]);
+    const [nonReturnedResults] = await db.query(queryNonReturnedSales, [selectedDate]);
+
+    let totalSales = 0;
+    let totalCost = 0;
+
+    nonReturnedResults.forEach(item => {
+      totalSales += parseFloat(item.total_ventas) || 0;
+      totalCost += parseFloat(item.total_cost) || 0;
+    });
+
+    res.json({
+      totalSales: totalSales.toFixed(2),
+      totalCost: totalCost.toFixed(2),
+      profit: (totalSales - totalCost).toFixed(2),
+      details: allSalesResults.map(item => ({
+        medicamento: item.medicamento,
+        cantidad: item.cantidad_total,
+        precio_unitario: item.precio_unitario,
+        devuelto: item.devuelto
+      }))
+    });
+  } catch (err) {
+    console.error('Error al obtener el reporte semanal:', err);
+    res.status(500).json({ error: 'Error al obtener el reporte semanal' });
+  }
+});
+
+
+// 📅 REPORTE MENSUAL
+app.get('/sales/month/:date', async (req, res) => {
+  const selectedDate = req.params.date;
+
+  const query = `
+    SELECT 
+      dv.id_medicamento, 
+      SUM(dv.cantidad) AS cantidad_total, 
+      dv.precio_unitario, 
+      m.nombre AS medicamento, 
+      SUM(dv.cantidad * dv.precio_unitario) AS total_ventas,
+      SUM(dv.cantidad * l.precio_compra) AS total_cost
+    FROM detalles_venta dv
+    JOIN lotes l ON dv.id_lote = l.id_lote
+    JOIN medicamentos m ON l.id_medicamento = m.id_medicamento
+    JOIN ventas v ON dv.id_venta = v.id_venta
+    WHERE MONTH(v.fecha) = MONTH(?) AND dv.devuelto = 0
+    GROUP BY dv.id_medicamento, dv.precio_unitario, m.nombre;
+  `;
+
+  try {
+    const [results] = await db.query(query, [selectedDate]);
+
+    let totalSales = 0;
+    let totalCost = 0;
+
+    results.forEach(item => {
+      totalSales += parseFloat(item.total_ventas) || 0;
+      totalCost += parseFloat(item.total_cost) || 0;
+    });
+
+    res.json({
+      totalSales: totalSales.toFixed(2),
+      totalCost: totalCost.toFixed(2),
+      profit: (totalSales - totalCost).toFixed(2),
+      details: results.map(item => ({
+        medicamento: item.medicamento,
+        cantidad: item.cantidad_total,
+        precio_unitario: item.precio_unitario,
+        devuelto: 0
+      }))
+    });
+  } catch (err) {
+    console.error('Error al obtener el reporte mensual:', err);
+    res.status(500).json({ error: 'Error al obtener el reporte mensual' });
+  }
+});
+
+
+
+
+app.post('/devolver_producto', async (req, res) => {
+  const { id_venta, id_medicamento, cantidad_devuelta } = req.body;
+
+  try {
+    // Buscar el producto en el detalle de la venta
+    const [detalleVenta] = await db.query(
+      'SELECT id_lote, cantidad, devuelto FROM detalles_venta WHERE id_venta = ? AND id_medicamento = ?',
+      [id_venta, id_medicamento]
+    );
+
+    if (detalleVenta.length === 0) {
+      return res.status(404).json({ error: 'Detalle de venta no encontrado' });
+    }
+
+    const { id_lote, cantidad, devuelto } = detalleVenta[0];
+
+    if (devuelto) {
+      return res.status(400).json({ error: 'El producto ya fue devuelto' });
+    }
+
+    if (cantidad_devuelta > cantidad) {
+      return res.status(400).json({ error: 'Cantidad devuelta excede la cantidad vendida' });
+    }
+
+    // Actualizar el stock en el lote
+    await db.query(
+      'UPDATE lotes SET stock = stock + ? WHERE id_lote = ?',
+      [cantidad_devuelta, id_lote]
+    );
+
+    // Marcar como devuelto
+    await db.query(
+      'UPDATE detalles_venta SET devuelto = TRUE WHERE id_venta = ? AND id_medicamento = ?',
+      [id_venta, id_medicamento]
+    );
+
+    res.status(200).json({ message: 'Producto devuelto y stock actualizado' });
+  } catch (error) {
+    console.error('Error en la devolución:', error);
+    res.status(500).json({ error: 'Error en la devolución', details: error.message });
+  }
+});
+
+app.get('/buscar_medicamento', async (req, res) => {
+  const { nombre } = req.query;
+
+  try {
+    const [rows] = await db.query(
+      `SELECT 
+         m.nombre,
+         SUM(l.stock) AS stock_disponible
+       FROM medicamentos m
+       JOIN lotes l ON l.id_medicamento = m.id_medicamento
+       WHERE m.nombre LIKE ? AND l.stock > 0
+       GROUP BY m.nombre
+       ORDER BY m.nombre
+       LIMIT 10`,
+      [`%${nombre}%`]
+    );
+
+    res.json(rows);
+  } catch (error) {
+    console.error('Error al buscar medicamentos:', error);
+    res.status(500).json({ message: 'Error al buscar medicamentos' });
+  }
+});
+
+
+
+app.get('/buscar_ventas', async (req, res) => {
+  const { searchTerm, barcodeSearchTerm } = req.query;
+  let query = `
+    SELECT 
+      v.id_venta, 
+      m.id_medicamento, 
+      m.nombre, 
+      m.codigo_barra, 
+      dv.cantidad, 
+      dv.precio_unitario, 
+      v.fecha, 
+      dv.devuelto
+    FROM ventas v
+    JOIN detalles_venta dv ON v.id_venta = dv.id_venta
+    JOIN medicamentos m ON dv.id_medicamento = m.id_medicamento
+    WHERE 1=1
+  `;
+
+  const params = [];
+
+  if (searchTerm) {
+    query += ` AND m.nombre LIKE ?`;
+    params.push(`%${searchTerm}%`);
+  }
+
+  if (barcodeSearchTerm) {
+    query += ` AND m.codigo_barra LIKE ?`;
+    params.push(`%${barcodeSearchTerm}%`);
+  }
+
+  query += ` ORDER BY v.id_venta DESC`;
+
+  try {
+    const [ventas] = await db.query(query, params);
+    res.json({ ventas });
+  } catch (error) {
+    console.error('Error al buscar ventas:', error);
+    res.status(500).json({ error: 'Error al buscar ventas' });
+  }
+});
+
+
+// GET: obtener encamamientos
+app.get('/api/encamamientos', async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT 
+  e.id_encamamiento, 
+  CAST(e.no_cuarto AS UNSIGNED) AS numero,
+  p.nombre AS paciente,
+  pi.estado,
+  pi.dieta,
+  e.fecha_ingreso AS ingreso,
+  pi.observaciones,
+  e.fecha_salida,
+  e.observacion_salida AS observacion_salida,
+  e.ocupado,
+  e.id_historial  -- ✅ AÑADIR ESTO
+FROM encamamiento e
+LEFT JOIN paciente_interno pi ON pi.id_encamamiento = e.id_encamamiento
+LEFT JOIN pacientes p ON p.id_paciente = e.id_paciente
+WHERE e.ocupado = 1
+ORDER BY e.no_cuarto
+
+    `);
+
+    res.json({ cuartos: rows }); // 🔁 importante: devolver como "cuartos"
+  } catch (err) {
+    console.error('Error al obtener encamamientos:', err);
+    res.status(500).json({ error: 'Error al obtener encamamientos' });
+  }
+});
+
+
+
+
+// ✅ MODIFICADO: POST registrar encamamiento usando id_paciente
+app.post('/api/encamamientos', async (req, res) => {
+  const { numero, id_paciente, estado, dieta, ingreso, observaciones } = req.body;
+
+  try {
+    if (!id_paciente) {
+      return res.status(400).json({ error: 'id_paciente es requerido' });
+    }
+
+    // Verificar si el cuarto ya está ocupado
+    const [ocupado] = await db.query(`
+      SELECT * FROM encamamiento 
+      WHERE no_cuarto = ? AND fecha_salida IS NULL
+      LIMIT 1
+    `, [numero]);
+
+    if (ocupado.length > 0) {
+      return res.status(400).json({ error: `El cuarto ${numero} ya está ocupado por otro paciente.` });
+    }
+
+    // Obtener el id_historial más reciente del paciente
+    const [historial] = await db.query(`
+      SELECT id
+      FROM historial_medico 
+      WHERE id_paciente = ?
+      ORDER BY fecha_consulta DESC
+      LIMIT 1
+    `, [id_paciente]);
+
+    const id_historial = historial.length > 0 ? historial[0].id : null;
+
+    // Insertar encamamiento con id_historial
+    const [enc] = await db.query(`
+      INSERT INTO encamamiento (id_paciente, no_cuarto, fecha_ingreso, ocupado, id_historial)
+      VALUES (?, ?, ?, 1, ?)
+    `, [id_paciente, numero, ingreso, id_historial]);
+
+    const id_encamamiento = enc.insertId;
+
+    // Insertar en paciente_interno
+    await db.query(`
+      INSERT INTO paciente_interno (id_encamamiento, estado, dieta, observaciones)
+      VALUES (?, ?, ?, ?)
+    `, [id_encamamiento, estado, dieta, observaciones]);
+
+    // Devolver cuartos ocupados actualizados (incluyendo id_historial)
+    const [rows] = await db.query(`
+      SELECT 
+        e.id_encamamiento,
+        CAST(e.no_cuarto AS UNSIGNED) AS numero,
+        p.nombre AS paciente,
+        pi.estado,
+        pi.dieta,
+        e.fecha_ingreso AS ingreso,
+        pi.observaciones,
+        e.fecha_salida,
+        e.observacion_salida AS observacion_salida,
+        e.ocupado,
+        e.id_historial
+      FROM encamamiento e
+      LEFT JOIN paciente_interno pi ON pi.id_encamamiento = e.id_encamamiento
+      LEFT JOIN pacientes p ON p.id_paciente = e.id_paciente
+      WHERE e.ocupado = 1
+      ORDER BY e.no_cuarto
+    `);
+
+    res.json({ cuartos: rows });
+  } catch (err) {
+    console.error('Error al registrar encamamiento:', err);
+    res.status(500).json({ error: 'Error al registrar encamamiento' });
+  }
+});
+
+
+app.get('/api/historial/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const [rows] = await db.query(`
+      SELECT 
+        id,
+        diagnostico,
+        sintomas,
+        medicamentos_recetados,
+        medico_responsable,
+        fecha_consulta
+      FROM historial_medico
+      WHERE id = ?
+      LIMIT 1
+    `, [id]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Historial no encontrado' });
+    }
+
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error al obtener historial médico:', err);
+    res.status(500).json({ error: 'Error al obtener historial médico' });
+  }
+});
+
+
+
+
+
+// PUT: dar salida
+app.put('/api/encamamientos/:numero/salida', async (req, res) => {
+  const { numero } = req.params;
+  const { fecha_salida, observacion_salida } = req.body;
+
+  try {
+    const [result] = await db.query(`
+      UPDATE encamamiento
+      SET fecha_salida = ?, observacion_salida = ?, ocupado = 0
+      WHERE no_cuarto = ? AND fecha_salida IS NULL
+      ORDER BY id_encamamiento DESC
+      LIMIT 1
+    `, [fecha_salida, observacion_salida || '', numero]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'No se encontró encamamiento activo.' });
+    }
+
+    res.json({ message: 'Salida registrada correctamente.' });
+  } catch (err) {
+    console.error('Error al registrar salida:', err);
+    res.status(500).json({ error: 'Error al registrar salida' });
+  }
+});
+
+app.post('/api/signos-vitales', async (req, res) => {
+  const {
+    id_encamamiento,
+    fecha,
+    presion_arterial,
+    temperatura,
+    frecuencia_cardiaca,
+    frecuencia_respiratoria,
+    saturacion_oxigeno,
+    glucemia,
+    creado_en
+  } = req.body;
+
+  try {
+    const [result] = await db.query(`
+      INSERT INTO signos_vitales_diarios 
+      (id_encamamiento, fecha, presion_arterial, temperatura, frecuencia_cardiaca, frecuencia_respiratoria, saturacion_oxigeno, glucemia, creado_en, actualizado_en)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+    `, [
+      id_encamamiento,
+      fecha,
+      presion_arterial,
+      temperatura,
+      frecuencia_cardiaca,
+      frecuencia_respiratoria,
+      saturacion_oxigeno,
+      glucemia,
+      creado_en || new Date(), // ← usa hora enviada o actual
+      new Date()
+    ]);
+
+    res.status(201).json({ message: 'Signos vitales guardados', id: result.insertId });
+  } catch (error) {
+    console.error('❌ Error al guardar signos vitales:', error);
+    res.status(500).json({ error: 'Error al guardar signos vitales' });
+  }
+});
+
+
+app.post('/api/datos-clinicos', async (req, res) => {
+  const {
+    id_encamamiento,
+    fecha,
+    dieta,
+    medicamentos_dia,
+    soluciones,
+    laboratorio,
+    especiales,
+    creado_en
+  } = req.body;
+
+  try {
+    const [result] = await db.query(`
+      INSERT INTO datos_clinicos_diarios 
+      (id_encamamiento, fecha, dieta, medicamentos_dia, soluciones, laboratorio, especiales, creado_en, actualizado_en)
+      VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+    `, [
+      id_encamamiento,
+      fecha,
+      dieta,
+      medicamentos_dia,
+      soluciones,
+      laboratorio,
+      especiales,
+      creado_en || new Date(),
+      new Date()
+    ]);
+
+    res.status(201).json({ message: 'Datos clínicos guardados', id: result.insertId });
+  } catch (error) {
+    console.error('❌ Error al guardar datos clínicos:', error);
+    res.status(500).json({ error: 'Error al guardar datos clínicos' });
+  }
+});
+
+
+app.get('/api/encamamientos/:id_encamamiento/fechas-con-datos', async (req, res) => {
+  const { id_encamamiento } = req.params;
+
+  try {
+    const [vitales] = await db.query(`
+      SELECT DISTINCT fecha FROM signos_vitales_diarios WHERE id_encamamiento = ?
+    `, [id_encamamiento]);
+
+    const [clinicos] = await db.query(`
+      SELECT DISTINCT fecha FROM datos_clinicos_diarios WHERE id_encamamiento = ?
+    `, [id_encamamiento]);
+
+    const fechas = new Set();
+
+    vitales.forEach(r => fechas.add(r.fecha.toISOString().slice(0, 10)));
+    clinicos.forEach(r => fechas.add(r.fecha.toISOString().slice(0, 10)));
+
+    res.json([...fechas]);
+  } catch (error) {
+    console.error('Error obteniendo fechas de datos:', error);
+    res.status(500).json({ error: 'Error al obtener fechas' });
+  }
+});
+
+
+
+app.get('/api/fechas-datos/:id_encamamiento', async (req, res) => {
+  const { id_encamamiento } = req.params;
+
+  try {
+    const [result] = await db.query(`
+      SELECT fecha, momento
+      FROM signos_vitales_diarios
+      WHERE id_encamamiento = ?
+      ORDER BY fecha DESC
+
+    `, [id_encamamiento]);
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error obteniendo fechas de datos:', error);
+    res.status(500).json({ error: 'Error al obtener fechas' });
+  }
+});
+
+// GET signos vitales por fecha
+app.get('/api/signos-vitales/:id_encamamiento/:fecha', async (req, res) => {
+  const { id_encamamiento, fecha } = req.params;
+
+  try {
+    const [rows] = await db.query(
+      `SELECT * FROM signos_vitales_diarios WHERE id_encamamiento = ? AND fecha = ? ORDER BY creado_en ASC`,
+      [id_encamamiento, fecha]
+    );
+
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener signos vitales' });
+  }
+});
+
+
+// GET datos clínicos por fecha
+app.get('/api/datos-clinicos/:id_encamamiento/:fecha', async (req, res) => {
+  const { id_encamamiento, fecha } = req.params;
+
+  try {
+    const [rows] = await db.query(
+      `SELECT * FROM datos_clinicos_diarios WHERE id_encamamiento = ? AND fecha = ? ORDER BY creado_en ASC`,
+      [id_encamamiento, fecha]
+    );
+
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener datos clínicos' });
+  }
+});
+
+
+// PUT actualizar signos vitales
+app.put('/api/signos-vitales/:id_encamamiento/:fecha', async (req, res) => {
+  const { id_encamamiento, fecha } = req.params;
+  const {
+    presion_arterial, temperatura, frecuencia_cardiaca, frecuencia_respiratoria,
+    saturacion_oxigeno, glucemia
+  } = req.body;
+  const momento = req.query.momento || 'mañana';
+
+
+  await db.query(`
+    UPDATE signos_vitales_diarios
+    SET presion_arterial=?, temperatura=?, frecuencia_cardiaca=?, frecuencia_respiratoria=?,
+        saturacion_oxigeno=?, glucemia=?, actualizado_en=NOW()
+    WHERE id_encamamiento=? AND fecha=? AND momento=?
+  `, [presion_arterial, temperatura, frecuencia_cardiaca, frecuencia_respiratoria,
+    saturacion_oxigeno, glucemia, id_encamamiento, fecha, momento]);
+
+  res.send('Signos vitales actualizados');
+});
+
+// PUT actualizar datos clínicos
+app.put('/api/datos-clinicos/:id_encamamiento/:fecha', async (req, res) => {
+  const { id_encamamiento, fecha } = req.params;
+  const { dieta, medicamentos_dia, soluciones, laboratorio, especiales } = req.body;
+  const momento = req.query.momento || 'mañana';
+
+
+  await db.query(`
+    UPDATE datos_clinicos_diarios
+    SET dieta=?, medicamentos_dia=?, soluciones=?, laboratorio=?, especiales=?, actualizado_en=NOW()
+   WHERE id_encamamiento=? AND fecha=? AND momento=?
+  `, [dieta, medicamentos_dia, soluciones, laboratorio, especiales, id_encamamiento, fecha, momento]);
+
+  res.send('Datos clínicos actualizados');
+});
+
+
+// GET registros con timestamp por fecha
+app.get('/api/encamamientos/:id_encamamiento/registros/:fecha', async (req, res) => {
+  const { id_encamamiento, fecha } = req.params;
+
+  try {
+    const [signos] = await db.query(`
+      SELECT id_signo, creado_en, presion_arterial, temperatura, frecuencia_cardiaca,
+             frecuencia_respiratoria, saturacion_oxigeno, glucemia
+      FROM signos_vitales_diarios
+      WHERE id_encamamiento = ? AND fecha = ?
+      ORDER BY creado_en ASC
+    `, [id_encamamiento, fecha]);
+
+    const [clinicos] = await db.query(`
+      SELECT id_dato, creado_en, dieta, medicamentos_dia, soluciones, laboratorio, especiales
+      FROM datos_clinicos_diarios
+      WHERE id_encamamiento = ? AND fecha = ?
+      ORDER BY creado_en ASC
+    `, [id_encamamiento, fecha]);
+
+    const registros = [];
+
+    for (let i = 0; i < Math.max(signos.length, clinicos.length); i++) {
+      const s = signos[i] || {};
+      const c = clinicos[i] || {};
+
+      registros.push({
+        hora: (s.creado_en || c.creado_en)?.toTimeString?.().slice(0, 5) || '---',
+        presion_arterial: s.presion_arterial || '',
+        temperatura: s.temperatura || '',
+        frecuencia_cardiaca: s.frecuencia_cardiaca || '',
+        frecuencia_respiratoria: s.frecuencia_respiratoria || '',
+        saturacion_oxigeno: s.saturacion_oxigeno || '',
+        glucemia: s.glucemia || '',
+        dieta: c.dieta || '',
+        medicamentos_dia: c.medicamentos_dia || '',
+        soluciones: c.soluciones || '',
+        laboratorio: c.laboratorio || '',
+        especiales: c.especiales || ''
+      });
+    }
+
+    res.json(registros);
+  } catch (err) {
+    console.error('❌ Error al obtener registros por hora:', err);
+    res.status(500).json({ error: 'Error al obtener registros' });
+  }
+});
+
+
+
+// ✅ NUEVO: autocompletado de pacientes
+app.get('/api/pacientes', async (req, res) => {
+  const { nombre } = req.query;
+  try {
+    const [rows] = await db.query(`
+      SELECT id_paciente, nombre    
+      FROM pacientes 
+      WHERE nombre LIKE ? 
+      LIMIT 10
+    `, [`%${nombre}%`]);
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al buscar pacientes' });
+  }
+});
+
+//De aca en adelante es la agenda
+
+app.post('/api/citas', verificarToken, async (req, res) => {
+  try {
+    const { id_paciente, fecha, hora, motivo, observaciones } = req.body;
+    const id_usuario = req.user.id; // ← del token
+
+    if (!id_paciente || !fecha || !hora) {
+      return res.status(400).json({ msg: 'Faltan datos obligatorios' });
+    }
+
+    await db.query(
+      `INSERT INTO cita (id_paciente, id_usuario, fecha, hora, motivo, observaciones)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [id_paciente, id_usuario, fecha, hora, motivo, observaciones]
+    );
+
+    res.status(201).json({ msg: 'Cita registrada exitosamente' });
+  } catch (error) {
+    console.error('❌ Error al crear cita:', error);
+    res.status(500).json({ msg: 'Error al registrar la cita', error: error.message });
+  }
+});
+
+
+
+app.get('/api/citas', verificarToken, async (req, res) => {
+  try {
+    const id_usuario = req.user.id;
+
+    const [rows] = await db.query(`
+      SELECT c.id, c.fecha, c.hora, c.motivo, c.observaciones, c.estado,
+             p.id_paciente, p.nombre AS paciente,
+             u.id_usuario, u.nombre AS medico
+      FROM cita c
+      JOIN pacientes p ON c.id_paciente = p.id_paciente
+      JOIN usuarios u ON c.id_usuario = u.id_usuario
+      WHERE c.id_usuario = ?
+    `, [id_usuario]);
+
+    res.json(rows);
+  } catch (error) {
+    console.error('❌ Error al obtener citas:', error);
+    res.status(500).json({ error: 'Error al obtener citas', details: error.message });
+  }
+});
+
+
+
+app.get('/api/medicos', async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT id_medico, nombre FROM medicos');
+    res.json(rows);
+  } catch (error) {
+    console.error('❌ Error al obtener médicos:', error);
+    res.status(500).json({ error: 'Error al obtener médicos' });
+  }
+});
+
+app.get('/api/pacientes', async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT id_paciente, nombre FROM pacientes');
+    res.json(rows);
+  } catch (error) {
+    console.error('❌ Error al obtener pacientes:', error);
+    res.status(500).json({ error: 'Error al obtener pacientes' });
+  }
+});
+
+
+app.get('/api/turnos', async (req, res) => {
+  const turnos = await db.query('SELECT * FROM turnos ORDER BY creado_en ASC');
+  res.json(turnos);
+});
+
+app.post('/api/turnos', async (req, res) => {
+  const { nombre_paciente, motivo } = req.body;
+  const result = await db.query('INSERT INTO turnos (nombre_paciente, motivo) VALUES (?, ?)', [nombre_paciente, motivo]);
+  const id = result.insertId;
+  const [turnoCreado] = await db.query('SELECT * FROM turnos WHERE id_turno = ?', [id]);
+  res.status(201).json(turnoCreado);
+});
+
+
+// pasa un turno a "atendiendo" y quita cualquier otro activo
+app.put('/api/turnos/:id/atender', async (req, res) => {
+  const { id } = req.params;
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.execute('UPDATE turnos SET estado="espera" WHERE estado="atendiendo"'); // deja solo 1 activo
+    await conn.execute('UPDATE turnos SET estado="atendiendo" WHERE id_turno=?', [id]);
+    await conn.commit();
+    res.sendStatus(200);
+  } catch (e) {
+    await conn.rollback();
+    console.error(e);
+    res.status(500).json({ error: 'No se pudo poner en atendiendo' });
+  } finally {
+    conn.release();
+  }
+});
+
+app.put('/api/turnos/:id/finalizar', async (req, res) => {
+  try {
+    await db.execute('UPDATE turnos SET estado="finalizado" WHERE id_turno=?', [req.params.id]);
+    res.sendStatus(200);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'No se pudo finalizar' });
+  }
+});
+
+app.put('/api/turnos/:id/no-atendido', async (req, res) => {
+  try {
+    await db.execute('UPDATE turnos SET estado="no_atendido" WHERE id_turno=?', [req.params.id]);
+    res.sendStatus(200);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'No se pudo marcar no atendido' });
+  }
+});
+
+
+app.get('/buscar_antecedentes', async (req, res) => {
+  const { tipo, termino } = req.query;
+
+  if (!['medico', 'quirurgico', 'alergico', 'traumaticos', 'familiares', 'vicios_y_manias'].includes(tipo)) {
+    return res.status(400).json({ error: 'Tipo de antecedente no válido' });
+  }
+
+  const columna = `antecedentes_${tipo}`;
+
+  try {
+    const [resultados] = await db.query(
+      `SELECT DISTINCT ${columna} FROM antecedentes_medicos WHERE ${columna} LIKE ? LIMIT 5`,
+      [`%${termino}%`]
+    );
+
+    const sugerencias = resultados.map((fila) => fila[columna]);
+    res.json(sugerencias);
+  } catch (error) {
+    console.error('Error al buscar antecedentes:', error);
+    res.status(500).json({ error: 'Error al buscar antecedentes' });
+  }
+});
+
+
+
+app.listen(3001, () => {
+  console.log('Servidor corriendo en el puerto 3001');
+  db.query("SELECT DATABASE() AS dbname, @@port AS port").then(([rows]) => {
+    console.log("✅ BASE CONECTADA:", rows[0].dbname);
+    console.log("✅ PUERTO:", rows[0].port);
+  }).catch((err) => {
+    console.error("Error comprobando base:", err);
+  });
+
+});

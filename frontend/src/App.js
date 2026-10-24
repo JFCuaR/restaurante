@@ -1,46 +1,206 @@
 import React from 'react';
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { Route, Routes } from 'react-router-dom';
+
 import Home from './Home';
-import HomeFarmacia from './HomeFarmacia';
-import AgregarUsuario from './AgregarUsuario';
-import Agregar from './Agregar_Productos';
-import Historial from './historial_medico';
-import Ventas from './ventas';
-import Ventas2 from './Ventas2';
-import BuscarPa from './Buscar_paciente';
-import AgendarCita from './AgendarCita';
-import Agendarcita1 from './agendarcita1';
-import Agenda from './Agenda';
-import Reportes from './reportes';
 import Login from './Login';
-import Devoluciones from './Devoluciones';
 import PrivateRoute from './PrivateRoute';
 import { AuthProvider } from './AuthContext';
-import 'bootstrap/dist/css/bootstrap.min.css';
 
+
+
+import RegistroTienda from './RegistroRestaurante';
+import GestionPedidos from './GestionPedidos';
+
+import RegistroRestaurante from './RegistroRestaurante';
+import Mesas from './Mesas';
+import Productos from './Productos';
+import Categorias from './Categorias';
+import NuevoPedido from './NuevoPedido';
+import Cocina from './Cocina';
+import Pedidos from './Pedidos';
+import Caja from './Caja';
+import Gastos from './Gastos';
+import Reportes from './Reportes';
+import Usuarios from './Usuarios';
+import Clientes from './Clientes';
+import Configuracion from './Configuracion';
+import Pagos from './Pagos';
+import MenuRestaurante from './MenuRestaurante';
+import MenuVisual from './MenuVisual';
+import RecuperarAcceso from './RecuperarAcceso';
+
+import 'bootstrap/dist/css/bootstrap.min.css';
 
 function App() {
   return (
     <AuthProvider>
-      <Router>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/" element={<PrivateRoute><Home /></PrivateRoute>} />
-          <Route path="/AgregarUsuario" element={<PrivateRoute><AgregarUsuario /></PrivateRoute>} />
-          <Route path="/Home" element={<PrivateRoute><Home /></PrivateRoute>} />
-          <Route path="/HomeFarmacia" element={<PrivateRoute><HomeFarmacia /></PrivateRoute>} />
-          <Route path="/Agregar_productos" element={<PrivateRoute><Agregar /></PrivateRoute>} />
-          <Route path="/Historial" element={<PrivateRoute><Historial /></PrivateRoute>} />
-          <Route path="/ventas" element={<PrivateRoute><Ventas /></PrivateRoute>} />
-          <Route path="/ventas2" element={<PrivateRoute><Ventas2 /></PrivateRoute>} />
-          <Route path="/Buscar_paciente" element={<PrivateRoute><BuscarPa /></PrivateRoute>} />
-          <Route path="/AgendarCita" element={<PrivateRoute><AgendarCita /></PrivateRoute>} />
-          <Route path="/Agendarcita1" element={<PrivateRoute><Agendarcita1 /></PrivateRoute>} />
-          <Route path="/Agenda" element={<PrivateRoute><Agenda /></PrivateRoute>} />
-          <Route path="/Devoluciones" element={<PrivateRoute><Devoluciones /></PrivateRoute>} />
-          <Route path="/Reportes" element={<PrivateRoute><Reportes /></PrivateRoute>} />
-        </Routes>
-      </Router>
+      <Routes>
+
+        {/* LOGIN */}
+        <Route path="/login" element={<Login />} />
+
+        {/* REGISTRO DE TIENDA */}
+
+        <Route path="/registro-restaurante" element={<RegistroRestaurante />} />
+
+        {/* HOME */}
+        <Route
+          path="/"
+          element={
+            <PrivateRoute>
+              <Home />
+            </PrivateRoute>
+          }
+        />
+
+        <Route
+          path="/Home"
+          element={
+            <PrivateRoute>
+              <Home />
+            </PrivateRoute>
+          }
+        />
+
+
+        <Route
+  path="/mesas"
+  element={
+    <PrivateRoute>
+      <Mesas />
+    </PrivateRoute>
+  }
+/>
+
+<Route
+  path="/productos"
+  element={
+    <PrivateRoute>
+      <Productos />
+    </PrivateRoute>
+  }
+/>
+
+      <Route
+  path="/categorias"
+  element={
+    <PrivateRoute>
+      <Categorias />
+    </PrivateRoute>
+  }
+/>  
+
+<Route
+  path="/nuevo-pedido"
+  element={
+    <PrivateRoute>
+      <NuevoPedido />
+    </PrivateRoute>
+  }
+/>
+
+<Route
+  path="/cocina"
+  element={
+    <PrivateRoute>
+      <Cocina />
+    </PrivateRoute>
+  }
+/>
+
+<Route
+  path="/pedidos"
+  element={
+    <PrivateRoute>
+      <Pedidos />
+    </PrivateRoute>
+  }
+/>
+
+<Route
+  path="/caja"
+  element={
+    <PrivateRoute>
+      <Caja />
+    </PrivateRoute>
+  }
+/>
+
+<Route
+  path="/gastos"
+  element={
+    <PrivateRoute>
+      <Gastos />
+    </PrivateRoute>
+  }
+/>
+
+<Route
+  path="/reportes"
+  element={
+    <PrivateRoute>
+      <Reportes />
+    </PrivateRoute>
+  }
+/>
+
+<Route
+  path="/usuarios"
+  element={
+    <PrivateRoute>
+      <Usuarios />
+    </PrivateRoute>
+  }
+/>
+
+<Route
+  path="/clientes"
+  element={
+    <PrivateRoute>
+      <Clientes />
+    </PrivateRoute>
+  }
+/>
+
+<Route
+  path="/configuracion"
+  element={
+    <PrivateRoute>
+      <Configuracion />
+    </PrivateRoute>
+  }
+/>
+
+<Route
+  path="/pagos"
+  element={
+    <PrivateRoute>
+      <Pagos />
+    </PrivateRoute>
+  }
+/>
+
+<Route
+  path="/MenuRestaurante"
+  element={
+    <PrivateRoute>
+      <MenuRestaurante />
+    </PrivateRoute>
+  }
+/>
+
+<Route path="/recuperar-acceso" element={<RecuperarAcceso />} />
+
+<Route
+  path="/MenuVisual"
+  element={
+    <PrivateRoute>
+      <MenuVisual />
+    </PrivateRoute>
+  }
+/>
+
+      </Routes>
     </AuthProvider>
   );
 }

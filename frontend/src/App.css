@@ -36,3 +36,46 @@
     transform: rotate(360deg);
   }
 }
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  overflow-x: hidden;
+  background: #f3f4f6;
+}
+
+#wrapper {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  background: #f3f4f6;
+}
+
+#sidebar-wrapper {
+  width: 260px;
+  min-width: 260px;
+  max-width: 260px;
+  min-height: 100vh;
+  background: #111827;
+  position: relative;
+  z-index: 1000;
+}
+
+#page-content-wrapper {
+  width: calc(100% - 260px);
+  min-height: 100vh;
+  flex: 1;
+  background: #f3f4f6;
+  overflow-x: hidden;
+}
+
+.container-fluid {
+  width: 100%;
+  max-width: none !important;
+}

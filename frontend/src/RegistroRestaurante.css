@@ -1,0 +1,417 @@
+.registro-page {
+  min-height: 100vh;
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(circle at top left, #fb923c 0, transparent 35%),
+              linear-gradient(135deg, #111827, #1f2937 55%, #7c2d12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.registro-light {
+  position: absolute;
+  border-radius: 999px;
+  background: #ffffff;
+  opacity: 0.18;
+  filter: blur(12px);
+  pointer-events: none;
+}
+
+.light-one {
+  width: 190px;
+  height: 190px;
+  top: 7%;
+  left: 7%;
+}
+
+.light-two {
+  width: 300px;
+  height: 300px;
+  right: -80px;
+  bottom: -80px;
+}
+
+.light-three {
+  width: 130px;
+  height: 130px;
+  top: 16%;
+  right: 18%;
+}
+
+.registro-wrapper {
+  width: 100%;
+  max-width: 1180px;
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  gap: 34px;
+  align-items: center;
+}
+
+.registro-info {
+  color: #ffffff;
+  padding: 25px;
+}
+
+.registro-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 34px;
+}
+
+.brand-logo {
+  width: 62px;
+  height: 62px;
+  object-fit: contain;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  padding: 7px;
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.28);
+}
+
+.registro-brand h2 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+.registro-brand span {
+  display: block;
+  color: #fed7aa;
+  font-weight: 600;
+  margin-top: -2px;
+}
+
+.registro-badge {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  color: #fed7aa;
+  padding: 9px 16px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 24px;
+  backdrop-filter: blur(10px);
+}
+
+.registro-info h1 {
+  margin: 0;
+  max-width: 560px;
+  font-size: 44px;
+  line-height: 1.08;
+  font-weight: 850;
+  letter-spacing: -1px;
+}
+
+.registro-info p {
+  max-width: 560px;
+  margin-top: 22px;
+  font-size: 16px;
+  line-height: 1.65;
+  color: #f3f4f6;
+}
+
+.registro-beneficios {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  margin-top: 34px;
+  max-width: 520px;
+}
+
+.registro-beneficios div {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  column-gap: 12px;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 18px;
+  padding: 15px 16px;
+  backdrop-filter: blur(10px);
+}
+
+.registro-beneficios strong {
+  grid-row: span 2;
+  font-size: 28px;
+  text-align: center;
+}
+
+.registro-beneficios h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.registro-beneficios span {
+  color: #e5e7eb;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.registro-card {
+  background: rgba(255, 255, 255, 0.97);
+  border-radius: 28px;
+  padding: 34px 32px;
+  box-shadow: 0 30px 75px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(18px);
+}
+
+.registro-card-header {
+  margin-bottom: 24px;
+}
+
+.registro-card-header > span {
+  display: inline-block;
+  color: #ea580c;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  padding: 7px 13px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  margin-bottom: 12px;
+}
+
+.registro-card-header h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 29px;
+  font-weight: 850;
+}
+
+.registro-card-header p {
+  margin: 7px 0 0;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.registro-alert {
+  border-radius: 14px;
+  padding: 13px 15px;
+  margin-bottom: 18px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.registro-alert-warning {
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.registro-alert-danger {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.registro-alert-success {
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.form-section-title {
+  margin-bottom: 15px;
+}
+
+.form-section-title h5 {
+  margin: 0;
+  color: #111827;
+  font-size: 16px;
+  font-weight: 850;
+}
+
+.form-section-title span {
+  display: block;
+  margin-top: 3px;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.registro-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px 16px;
+}
+
+.form-group {
+  margin-bottom: 0;
+}
+
+.form-group.full {
+  grid-column: 1 / -1;
+}
+
+.form-group label {
+  display: block;
+  color: #374151;
+  font-size: 14px;
+  font-weight: 750;
+  margin-bottom: 8px;
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+  min-height: 46px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #111827;
+  outline: none;
+  box-sizing: border-box;
+  font-size: 15px;
+  transition: all 0.2s ease;
+}
+
+.form-group input::placeholder {
+  color: #9ca3af;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  border-color: #f97316;
+  box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.16);
+}
+
+.form-group select {
+  cursor: pointer;
+}
+
+.registro-divider {
+  height: 1px;
+  background: linear-gradient(to right, transparent, #fed7aa, transparent);
+  margin: 26px 0 22px;
+}
+
+.btn-registro {
+  width: 100%;
+  border: none;
+  border-radius: 15px;
+  padding: 15px;
+  background: linear-gradient(135deg, #dc2626, #f97316);
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 850;
+  cursor: pointer;
+  margin-top: 24px;
+  transition: all 0.2s ease;
+}
+
+.btn-registro:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(249, 115, 22, 0.35);
+}
+
+.btn-registro:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.login-link {
+  margin-top: 21px;
+  text-align: center;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.login-link a {
+  color: #ea580c;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.login-link a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 1050px) {
+  .registro-wrapper {
+    grid-template-columns: 1fr;
+    max-width: 760px;
+  }
+
+  .registro-info {
+    text-align: center;
+    padding: 10px;
+  }
+
+  .registro-brand {
+    justify-content: center;
+    margin-bottom: 22px;
+  }
+
+  .registro-info h1,
+  .registro-info p {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .registro-beneficios {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 700px) {
+  .registro-page {
+    padding: 18px;
+    align-items: flex-start;
+  }
+
+  .registro-info h1 {
+    font-size: 32px;
+  }
+
+  .registro-info p {
+    font-size: 15px;
+  }
+
+  .registro-card {
+    padding: 28px 22px;
+    border-radius: 22px;
+  }
+
+  .registro-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .registro-card-header h2 {
+    font-size: 25px;
+  }
+}
+
+@media (max-width: 430px) {
+  .registro-info h1 {
+    font-size: 28px;
+  }
+
+  .registro-beneficios div {
+    grid-template-columns: 42px 1fr;
+    padding: 13px;
+  }
+
+  .registro-beneficios strong {
+    font-size: 25px;
+  }
+
+  .brand-logo {
+    width: 54px;
+    height: 54px;
+  }
+
+  .registro-brand h2 {
+    font-size: 25px;
+  }
+}

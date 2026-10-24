@@ -1,0 +1,185 @@
+/* =========================
+   SIDEBAR - SISTEMA PEDIDOS
+========================= */
+
+#sidebar-wrapper {
+  width: 250px;
+  min-width: 250px;
+  max-width: 250px;
+  height: 100vh;
+  min-height: 100vh;
+  background: #172231 !important;
+  color: #ffffff;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  box-shadow: 3px 0 12px rgba(0, 0, 0, 0.25);
+}
+
+/* Header */
+.sidebar-header {
+  background: #101827;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18) !important;
+}
+
+.sidebar-header h5 {
+  font-size: 25px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #ffffff;
+}
+
+.sidebar-header h6 {
+  font-size: 20px;
+  font-weight: 800;
+  color: #ffc107 !important;
+}
+
+/* Usuario */
+#sidebar-wrapper .text-white.text-center.p-3 {
+  background: #1f2d3d;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15) !important;
+}
+
+#sidebar-wrapper strong {
+  font-size: 22px;
+  color: #ffffff;
+}
+
+#sidebar-wrapper small.text-muted {
+  color: #dbe4ef !important;
+}
+
+/* Menú */
+#sidebar-wrapper .list-group {
+  background: transparent;
+}
+
+.menu-section {
+  margin: 14px 12px;
+}
+
+.menu-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: #ffc107;
+  letter-spacing: 1px;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+
+.menu-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.submenu-item {
+  display: block;
+  width: 100%;
+  color: #ffffff;
+  text-decoration: none;
+  font-size: 17px;
+  font-weight: 600;
+  padding: 10px 10px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.submenu-item:hover {
+  background: #ffc107;
+  color: #172231;
+  text-decoration: none;
+}
+
+.submenu-item:focus {
+  outline: none;
+  background: #ffc107;
+  color: #172231;
+}
+
+/* Footer */
+.sidebar-footer {
+  background: #101827;
+  border-top: 1px solid rgba(255, 255, 255, 0.18) !important;
+}
+
+.sidebar-footer button {
+  border-radius: 20px;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 6px 16px;
+}
+
+.sidebar-footer button:hover {
+  background: #dc3545;
+  border-color: #dc3545;
+  color: #ffffff;
+}
+
+.sidebar-footer small {
+  color: #dbe4ef;
+  font-size: 15px;
+}
+
+/* Scroll */
+#sidebar-wrapper::-webkit-scrollbar {
+  width: 6px;
+}
+
+#sidebar-wrapper::-webkit-scrollbar-track {
+  background: #101827;
+}
+
+#sidebar-wrapper::-webkit-scrollbar-thumb {
+  background: #ffc107;
+  border-radius: 20px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  #sidebar-wrapper {
+    position: fixed;
+    top: 0;
+    left: -250px;
+    z-index: 1050;
+    transition: left 0.3s ease;
+  }
+
+  #sidebar-wrapper.open {
+    left: 0;
+  }
+}
+
+#wrapper {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+}
+
+#sidebar-wrapper {
+  width: 260px;
+  min-width: 260px;
+  max-width: 260px;
+}
+
+#page-content-wrapper {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  background: #f3f4f6;
+}
+
+.container-fluid {
+  max-width: none !important;
+  width: 100% !important;
+}
+
+.home-container,
+.mesas-container {
+  max-width: none !important;
+  width: 100% !important;
+  box-sizing: border-box;
+}
